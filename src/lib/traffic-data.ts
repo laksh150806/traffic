@@ -1,104 +1,59 @@
 import { supabase } from "@/integrations/supabase/client";
+import { DATA_MODE } from "@/lib/data-mode";
+import * as demo from "@/lib/demo-engine";
+import {
+  aggregateCycleRows,
+  computeModelPerformance,
+  directionRank,
+  type CycleRow,
+  type ModelStateSlice,
+} from "@/lib/traffic-aggregate";
+import type {
+  ApproachModelState,
+  CameraTile,
+  CctvPoint,
+  CongestionLevel,
+  CyclePoint,
+  JunctionSummary,
+  ModelPerformance,
+  RoadState,
+} from "@/lib/traffic-types";
 
-export type CongestionLevel = "LOW" | "MODERATE" | "HIGH";
+export type {
+  ApproachModelState,
+  CameraTile,
+  CctvPoint,
+  CongestionLevel,
+  CyclePoint,
+  JunctionSummary,
+  ModelPerformance,
+  RoadState,
+} from "@/lib/traffic-types";
 
-export type JunctionSummary = {
-  junction_id: number;
-  name: string;
-  zone: string;
-  latitude: number;
-  longitude: number;
-  avg_vehicle_count: number;
-  total_vehicle_count: number;
-  congestion_level: CongestionLevel;
-  last_reading_at: string | null;
-};
-
-export type RoadState = {
-  road_id: number;
-  direction: string;
-  road_name: string | null;
-  max_capacity: number;
-  vehicle_count: number;
-  source: string;
-  recorded_at: string | null;
-  green_duration_sec: number;
-  timing_mode: string;
-  is_currently_green: boolean;
-  /** When the current phase state started, used for the live green countdown. */
-  phase_started_at: string | null;
-};
-
-export type CyclePoint = {
-  cycle_number: number;
-  adaptive_sec: number;
-  fixed_sec: number;
-  saved_sec: number;
-  /** Modelled average wait per vehicle under the adaptive plan (s). */
-  delay_adaptive: number;
-  /** Modelled average wait per vehicle under a fixed 30s/120s plan (s). */
-  delay_fixed: number;
-};
-
-export type ApproachModelState = {
-  road_id: number;
-  direction: string;
-  arrival_rate_vph: number;
-  saturation_flow_vph: number;
-  degree_saturation: number;
-  green_sec: number;
-  cycle_length_sec: number;
-  queue_now: number;
-  predicted_queue_next: number;
-  predicted_delay_adaptive_sec: number;
-  predicted_delay_fixed_sec: number;
-  queue_clears: boolean;
-};
-
-export type ModelPerformance = {
-  /** Mean absolute error of the queue prediction, vehicles. */
-  meanAbsError: number;
-  /** Share of predictions within 3 vehicles of reality. */
-  hitRate: number;
-  samples: number;
-  /** Flow-weighted average wait per vehicle across the whole network. */
-  networkDelayAdaptive: number;
-  networkDelayFixed: number;
-  /** Approaches predicted to be over capacity (x > 1). */
-  saturatedApproaches: number;
-};
-
-
-export type CctvPoint = {
-  frame_number: number;
-  vehicles_detected: number;
-  confidence_avg: number;
-  camera_name: string;
-  analyzed_at: string;
-};
-
-const DIRECTION_ORDER = ["NORTH", "EAST", "SOUTH", "WEST"];
+const isDemo = DATA_MODE === "demo";
 
 export async function fetchJunctions(): Promise<JunctionSummary[]> {
+  if (isDemo) return demo.demoFetchJunctions();
   const { data, error } = await supabase
     .from("v_junction_congestion")
     .select("*")
     .order("junction_id");
   if (error) throw new Error(error.message);
   return (data ?? []).map((row: Record<string, unknown>) => ({
-    junction_id: Number(row['junction_id']),
-    name: String(row['name']),
-    zone: String(row['zone'] ?? "Central"),
-    latitude: Number(row['latitude']),
-    longitude: Number(row['longitude']),
-    avg_vehicle_count: Number(row['avg_vehicle_count'] ?? 0),
-    total_vehicle_count: Number(row['total_vehicle_count'] ?? 0),
-    congestion_level: (row['congestion_level'] as CongestionLevel) ?? "LOW",
-    last_reading_at: (row['last_reading_at'] as string | null) ?? null,
+    junction_id: Number(row["junction_id"]),
+    name: String(row["name"]),
+    zone: String(row["zone"] ?? "Central"),
+    latitude: Number(row["latitude"]),
+    longitude: Number(row["longitude"]),
+    avg_vehicle_count: Number(row["avg_vehicle_count"] ?? 0),
+    total_vehicle_count: Number(row["total_vehicle_count"] ?? 0),
+    congestion_level: (row["congestion_level"] as CongestionLevel) ?? "LOW",
+    last_reading_at: (row["last_reading_at"] as string | null) ?? null,
   }));
 }
 
 export async function fetchRoadStates(junctionId: number): Promise<RoadState[]> {
+  if (isDemo) return demo.demoFetchRoadStates(junctionId);
   const { data: roads, error } = await supabase
     .from("roads")
     .select("road_id, direction, road_name, max_capacity")
@@ -127,11 +82,11 @@ export async function fetchRoadStates(junctionId: number): Promise<RoadState[]> 
   ]);
 
   const timingByRoad = new Map(
-    ((timings ?? []) as Array<Record<string, unknown>>).map((t) => [Number(t['road_id']), t]),
+    ((timings ?? []) as Array<Record<string, unknown>>).map((t) => [Number(t["road_id"]), t]),
   );
   const latestByRoad = new Map<number, Record<string, unknown>>();
   for (const row of (counts ?? []) as Array<Record<string, unknown>>) {
-    const id = Number(row['road_id']);
+    const id = Number(row["road_id"]);
     if (!latestByRoad.has(id)) latestByRoad.set(id, row);
   }
 
@@ -144,19 +99,20 @@ export async function fetchRoadStates(junctionId: number): Promise<RoadState[]> 
         direction: road.direction,
         road_name: road.road_name,
         max_capacity: road.max_capacity,
-        vehicle_count: Number(latest?.['vehicle_count'] ?? 0),
-        source: String(latest?.['source'] ?? "SIMULATED_SENSOR"),
-        recorded_at: (latest?.['recorded_at'] as string | undefined) ?? null,
-        green_duration_sec: Number(timing?.['green_duration_sec'] ?? 30),
-        timing_mode: String(timing?.['timing_mode'] ?? "ADAPTIVE"),
-        is_currently_green: Boolean(timing?.['is_currently_green'] ?? false),
-        phase_started_at: (timing?.['updated_at'] as string | undefined) ?? null,
+        vehicle_count: Number(latest?.["vehicle_count"] ?? 0),
+        source: String(latest?.["source"] ?? "SIMULATED_SENSOR"),
+        recorded_at: (latest?.["recorded_at"] as string | undefined) ?? null,
+        green_duration_sec: Number(timing?.["green_duration_sec"] ?? 30),
+        timing_mode: String(timing?.["timing_mode"] ?? "ADAPTIVE"),
+        is_currently_green: Boolean(timing?.["is_currently_green"] ?? false),
+        phase_started_at: (timing?.["updated_at"] as string | undefined) ?? null,
       };
     })
-    .sort((a, b) => DIRECTION_ORDER.indexOf(a.direction) - DIRECTION_ORDER.indexOf(b.direction));
+    .sort((a, b) => directionRank(a.direction) - directionRank(b.direction));
 }
 
 export async function fetchCycleComparison(junctionId: number): Promise<CyclePoint[]> {
+  if (isDemo) return demo.demoFetchCycleComparison(junctionId);
   const { data, error } = await supabase
     .from("signal_history")
     .select(
@@ -167,38 +123,11 @@ export async function fetchCycleComparison(junctionId: number): Promise<CyclePoi
     .limit(120);
   if (error) throw new Error(error.message);
 
-  const byCycle = new Map<number, CyclePoint & { n: number }>();
-  for (const row of (data ?? []) as Array<Record<string, number>>) {
-    const cycle = Number(row['cycle_number'] ?? 0);
-    const point = byCycle.get(cycle) ?? {
-      cycle_number: cycle,
-      adaptive_sec: 0,
-      fixed_sec: 0,
-      saved_sec: 0,
-      delay_adaptive: 0,
-      delay_fixed: 0,
-      n: 0,
-    };
-    point.adaptive_sec += Number(row['allocated_green_sec'] ?? 0);
-    point.fixed_sec += Number(row['baseline_fixed_sec'] ?? 30);
-    point.saved_sec += Number(row['estimated_wait_saved_sec'] ?? 0);
-    point.delay_adaptive += Number(row['predicted_delay_adaptive_sec'] ?? 0);
-    point.delay_fixed += Number(row['predicted_delay_fixed_sec'] ?? 0);
-    point.n += 1;
-    byCycle.set(cycle, point);
-  }
-
-  return Array.from(byCycle.values())
-    .sort((a, b) => a.cycle_number - b.cycle_number)
-    .slice(-15)
-    .map(({ n, ...point }) => ({
-      ...point,
-      delay_adaptive: Number((point.delay_adaptive / Math.max(n, 1)).toFixed(1)),
-      delay_fixed: Number((point.delay_fixed / Math.max(n, 1)).toFixed(1)),
-    }));
+  return aggregateCycleRows((data ?? []) as CycleRow[]);
 }
 
 export async function fetchJunctionModel(junctionId: number): Promise<ApproachModelState[]> {
+  if (isDemo) return demo.demoFetchJunctionModel(junctionId);
   const [{ data: roads }, { data: state, error }] = await Promise.all([
     supabase.from("roads").select("road_id, direction").eq("junction_id", junctionId),
     supabase.from("model_road_state").select("*").eq("junction_id", junctionId),
@@ -213,23 +142,24 @@ export async function fetchJunctionModel(junctionId: number): Promise<ApproachMo
 
   return ((state ?? []) as Array<Record<string, unknown>>)
     .map((row) => ({
-      road_id: Number(row['road_id']),
-      direction: dirByRoad.get(Number(row['road_id'])) ?? "—",
-      arrival_rate_vph: Number(row['arrival_rate_vph'] ?? 0),
-      saturation_flow_vph: Number(row['saturation_flow_vph'] ?? 0),
-      degree_saturation: Number(row['degree_saturation'] ?? 0),
-      green_sec: Number(row['green_sec'] ?? 0),
-      cycle_length_sec: Number(row['cycle_length_sec'] ?? 0),
-      queue_now: Number(row['queue_now'] ?? 0),
-      predicted_queue_next: Number(row['predicted_queue_next'] ?? 0),
-      predicted_delay_adaptive_sec: Number(row['predicted_delay_adaptive_sec'] ?? 0),
-      predicted_delay_fixed_sec: Number(row['predicted_delay_fixed_sec'] ?? 0),
-      queue_clears: Boolean(row['queue_clears']),
+      road_id: Number(row["road_id"]),
+      direction: dirByRoad.get(Number(row["road_id"])) ?? "—",
+      arrival_rate_vph: Number(row["arrival_rate_vph"] ?? 0),
+      saturation_flow_vph: Number(row["saturation_flow_vph"] ?? 0),
+      degree_saturation: Number(row["degree_saturation"] ?? 0),
+      green_sec: Number(row["green_sec"] ?? 0),
+      cycle_length_sec: Number(row["cycle_length_sec"] ?? 0),
+      queue_now: Number(row["queue_now"] ?? 0),
+      predicted_queue_next: Number(row["predicted_queue_next"] ?? 0),
+      predicted_delay_adaptive_sec: Number(row["predicted_delay_adaptive_sec"] ?? 0),
+      predicted_delay_fixed_sec: Number(row["predicted_delay_fixed_sec"] ?? 0),
+      queue_clears: Boolean(row["queue_clears"]),
     }))
-    .sort((a, b) => DIRECTION_ORDER.indexOf(a.direction) - DIRECTION_ORDER.indexOf(b.direction));
+    .sort((a, b) => directionRank(a.direction) - directionRank(b.direction));
 }
 
 export async function fetchModelPerformance(): Promise<ModelPerformance> {
+  if (isDemo) return demo.demoFetchModelPerformance();
   const [{ data: accuracy }, { data: state }] = await Promise.all([
     supabase
       .from("model_accuracy")
@@ -246,35 +176,11 @@ export async function fetchModelPerformance(): Promise<ModelPerformance> {
   const errors = ((accuracy ?? []) as Array<{ abs_error: number }>).map((r) =>
     Number(r.abs_error ?? 0),
   );
-  const samples = errors.length;
-  const meanAbsError = samples > 0 ? errors.reduce((a, b) => a + b, 0) / samples : 0;
-  const hitRate = samples > 0 ? errors.filter((e) => e <= 3).length / samples : 0;
-
-  const rows = (state ?? []) as Array<Record<string, number>>;
-  let flow = 0;
-  let adaptive = 0;
-  let fixed = 0;
-  let saturated = 0;
-  for (const row of rows) {
-    const w = Number(row['arrival_rate_vph'] ?? 0);
-    flow += w;
-    adaptive += Number(row['predicted_delay_adaptive_sec'] ?? 0) * w;
-    fixed += Number(row['predicted_delay_fixed_sec'] ?? 0) * w;
-    if (Number(row['degree_saturation'] ?? 0) > 1) saturated += 1;
-  }
-
-  return {
-    meanAbsError: Number(meanAbsError.toFixed(2)),
-    hitRate: Number(hitRate.toFixed(3)),
-    samples,
-    networkDelayAdaptive: Number((flow > 0 ? adaptive / flow : 0).toFixed(1)),
-    networkDelayFixed: Number((flow > 0 ? fixed / flow : 0).toFixed(1)),
-    saturatedApproaches: saturated,
-  };
+  return computeModelPerformance(errors, (state ?? []) as ModelStateSlice[]);
 }
 
-
 export async function fetchTotalSecondsSaved(): Promise<number> {
+  if (isDemo) return demo.demoFetchTotalSecondsSaved();
   const { data, error } = await supabase
     .from("signal_history")
     .select("estimated_wait_saved_sec")
@@ -288,7 +194,11 @@ export async function fetchTotalSecondsSaved(): Promise<number> {
 }
 
 export async function fetchCctvFeed(junctionId: number): Promise<CctvPoint[]> {
-  const { data: roads } = await supabase.from("roads").select("road_id").eq("junction_id", junctionId);
+  if (isDemo) return demo.demoFetchCctvFeed(junctionId);
+  const { data: roads } = await supabase
+    .from("roads")
+    .select("road_id")
+    .eq("junction_id", junctionId);
   const roadIds = ((roads ?? []) as Array<{ road_id: number }>).map((r) => r.road_id);
   if (roadIds.length === 0) return [];
 
@@ -298,7 +208,9 @@ export async function fetchCctvFeed(junctionId: number): Promise<CctvPoint[]> {
     .in("road_id", roadIds);
   const cameraRows = (cameras ?? []) as Array<{ camera_id: number; camera_name: string | null }>;
   if (cameraRows.length === 0) return [];
-  const nameById = new Map(cameraRows.map((c) => [c.camera_id, c.camera_name ?? `CAM-${c.camera_id}`]));
+  const nameById = new Map(
+    cameraRows.map((c) => [c.camera_id, c.camera_name ?? `CAM-${c.camera_id}`]),
+  );
 
   const { data, error } = await supabase
     .from("cctv_analysis_log")
@@ -313,32 +225,21 @@ export async function fetchCctvFeed(junctionId: number): Promise<CctvPoint[]> {
 
   return ((data ?? []) as Array<Record<string, unknown>>)
     .map((row) => ({
-      frame_number: Number(row['frame_number'] ?? 0),
-      vehicles_detected: Number(row['vehicles_detected'] ?? 0),
-      confidence_avg: Number(row['confidence_avg'] ?? 0),
-      camera_name: nameById.get(Number(row['camera_id'])) ?? "CAM",
-      analyzed_at: String(row['analyzed_at']),
+      frame_number: Number(row["frame_number"] ?? 0),
+      vehicles_detected: Number(row["vehicles_detected"] ?? 0),
+      confidence_avg: Number(row["confidence_avg"] ?? 0),
+      camera_name: nameById.get(Number(row["camera_id"])) ?? "CAM",
+      analyzed_at: String(row["analyzed_at"]),
     }))
     .reverse();
 }
-
-export type CameraTile = {
-  camera_id: number;
-  camera_name: string;
-  status: string;
-  road_id: number;
-  direction: string;
-  road_name: string | null;
-  frame_number: number;
-  confidence_avg: number;
-  analyzed_at: string | null;
-};
 
 /**
  * One row per camera at a junction: which approach it watches plus its latest
  * analysed frame, used to render the camera wall.
  */
 export async function fetchCameraTiles(junctionId: number): Promise<CameraTile[]> {
+  if (isDemo) return demo.demoFetchCameraTiles(junctionId);
   const { data: roads } = await supabase
     .from("roads")
     .select("road_id, direction, road_name")
@@ -378,7 +279,7 @@ export async function fetchCameraTiles(junctionId: number): Promise<CameraTile[]
 
   const latestByCamera = new Map<number, Record<string, unknown>>();
   for (const row of (logs ?? []) as Array<Record<string, unknown>>) {
-    const id = Number(row['camera_id']);
+    const id = Number(row["camera_id"]);
     if (!latestByCamera.has(id)) latestByCamera.set(id, row);
   }
 
@@ -393,12 +294,10 @@ export async function fetchCameraTiles(junctionId: number): Promise<CameraTile[]
         road_id: camera.road_id,
         direction: road?.direction ?? "NORTH",
         road_name: road?.road_name ?? null,
-        frame_number: Number(latest?.['frame_number'] ?? 0),
-        confidence_avg: Number(latest?.['confidence_avg'] ?? 0.9),
-        analyzed_at: (latest?.['analyzed_at'] as string | undefined) ?? null,
+        frame_number: Number(latest?.["frame_number"] ?? 0),
+        confidence_avg: Number(latest?.["confidence_avg"] ?? 0.9),
+        analyzed_at: (latest?.["analyzed_at"] as string | undefined) ?? null,
       };
     })
-    .sort(
-      (a, b) => DIRECTION_ORDER.indexOf(a.direction) - DIRECTION_ORDER.indexOf(b.direction),
-    );
+    .sort((a, b) => directionRank(a.direction) - directionRank(b.direction));
 }

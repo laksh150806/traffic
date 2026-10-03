@@ -1,16 +1,19 @@
 import { createServerFn } from "@tanstack/react-start";
+import { FIXED_GREEN, clamp, solveJunction, type ApproachInput } from "@/lib/traffic-model";
 import {
-  FIXED_CYCLE,
-  FIXED_GREEN,
-  clamp,
-  saturationFlow,
-  solveJunction,
-  type ApproachInput,
-} from "@/lib/traffic-model";
+  approachPressure,
+  decidePhase,
+  greenSecondsHeld,
+  stepQueue,
+  timeOfDayFactor,
+  type PhaseApproach,
+} from "@/lib/sim-core";
 
 const BASELINE_FIXED_SEC = FIXED_GREEN;
 /** Nominal seconds between control updates, used when no history exists yet. */
 const NOMINAL_TICK_SEC = 12;
+/** A tick arriving sooner than this after the previous one is ignored. */
+const MIN_TICK_GAP_MS = 5000;
 
 type RoadRow = { road_id: number; junction_id: number; direction: string; max_capacity: number };
 
@@ -24,26 +27,6 @@ type ModelStateRow = {
   predicted_queue_next: number;
   updated_at: string;
 };
-
-/**
- * Deterministic per-road "personality": how heavily loaded this approach runs
- * relative to its own capacity (0.5 = half capacity, 1.05 = just over).
- */
-function loadFor(roadId: number) {
-  const seed = Math.sin(roadId * 12.9898) * 43758.5453;
-  const frac = seed - Math.floor(seed);
-  return 0.45 + frac * 0.95;
-}
-
-/** Chennai (UTC+5:30) rush hour shaping of demand. */
-function timeOfDayFactor(now: Date) {
-  const istHour = (now.getUTCHours() + 5.5 + now.getUTCMinutes() / 60) % 24;
-  if (istHour >= 8 && istHour < 10) return 1.75;
-  if (istHour >= 17 && istHour < 20) return 1.9;
-  if (istHour >= 10 && istHour < 17) return 1.15;
-  if (istHour >= 20 && istHour < 23) return 0.9;
-  return 0.45;
-}
 
 /**
  * Control tick.
@@ -99,6 +82,16 @@ export const runTrafficTick = createServerFn({ method: "POST" }).handler(async (
     ((modelRows ?? []) as ModelStateRow[]).map((row) => [row.road_id, row]),
   );
 
+  // Several open tabs (or a hammered endpoint) must not multiply the control loop:
+  // if the model was solved moments ago, there is nothing new to do.
+  const lastSolvedMs = Math.max(
+    0,
+    ...[...stateByRoad.values()].map((row) => new Date(row.updated_at).getTime()),
+  );
+  if (now.getTime() - lastSolvedMs < MIN_TICK_GAP_MS) {
+    return { ok: true, cycles: 0, skipped: true };
+  }
+
   // ---- 1. Advance the physical queues -------------------------------------
   const queues = new Map<number, number>();
   const exactQueues = new Map<number, number>();
@@ -114,28 +107,30 @@ export const runTrafficTick = createServerFn({ method: "POST" }).handler(async (
       : NOMINAL_TICK_SEC;
     elapsedByRoad.set(road.road_id, elapsed);
 
-    // Demand is expressed against this approach's own capacity (saturation
-    // flow shared across the four phases), so off-peak clears and peak
-    // genuinely oversaturates the junction.
-    const approachCapacity = saturationFlow(road.max_capacity) / 4;
-    const demandVph = approachCapacity * loadFor(road.road_id) * (factor / 1.15);
-    const arrivals = ((demandVph * (0.85 + Math.random() * 0.3)) / 3600) * elapsed;
-
     // Discharge only happens while this approach actually holds the green,
     // and only for as long as its allocated green lasts.
-    const greenSeconds = wasGreen.has(road.road_id)
-      ? Math.min(elapsed, state?.green_sec ?? FIXED_GREEN)
-      : 0;
+    const greenSeconds = greenSecondsHeld(wasGreen.has(road.road_id), elapsed, state?.green_sec);
     greenSecondsByRoad.set(road.road_id, greenSeconds);
-    const prior = state ? Number(state.queue_exact) : (previousQueue.get(road.road_id) ?? arrivals);
-    const served = Math.min(prior + arrivals, (saturationFlow(road.max_capacity) / 3600) * greenSeconds);
-    const exact = clamp(prior + arrivals - served, 0, 150);
-    const queue = Math.round(exact);
-    // Detector count for the window, with a little measurement noise.
-    measuredArrivals.set(road.road_id, Math.max(0, Math.round(arrivals * (0.9 + Math.random() * 0.2))));
-    exactQueues.set(road.road_id, Number(exact.toFixed(2)));
-    queues.set(road.road_id, queue);
-    sensorRows.push({ road_id: road.road_id, vehicle_count: queue, source: "SIMULATED_SENSOR" });
+
+    // Demand is expressed against this approach's own capacity, so off-peak
+    // clears and peak genuinely oversaturates the junction.
+    const step = stepQueue({
+      roadId: road.road_id,
+      maxCapacity: road.max_capacity,
+      factor,
+      elapsedSec: elapsed,
+      // With no model state yet, seed the queue from the last reading (or 0).
+      priorExact: state ? Number(state.queue_exact) : (previousQueue.get(road.road_id) ?? 0),
+      greenSeconds,
+    });
+    measuredArrivals.set(road.road_id, step.measuredArrivals);
+    exactQueues.set(road.road_id, Number(step.exact.toFixed(2)));
+    queues.set(road.road_id, step.queue);
+    sensorRows.push({
+      road_id: road.road_id,
+      vehicle_count: step.queue,
+      source: "SIMULATED_SENSOR",
+    });
   }
 
   await supabaseAdmin.from("vehicle_counts").insert(sensorRows);
@@ -170,7 +165,8 @@ export const runTrafficTick = createServerFn({ method: "POST" }).handler(async (
   const cycleByJunction = new Map<number, number>();
   for (const row of (lastCycles ?? []) as Array<{ junction_id: number; cycle_number: number }>) {
     const current = cycleByJunction.get(row.junction_id) ?? 0;
-    if ((row.cycle_number ?? 0) > current) cycleByJunction.set(row.junction_id, row.cycle_number ?? 0);
+    if ((row.cycle_number ?? 0) > current)
+      cycleByJunction.set(row.junction_id, row.cycle_number ?? 0);
   }
 
   const byJunction = new Map<number, RoadRow[]>();
@@ -219,15 +215,19 @@ export const runTrafficTick = createServerFn({ method: "POST" }).handler(async (
 
   for (const [junctionId, junctionRoads] of byJunction) {
     const elapsed =
-      junctionRoads.reduce((sum, r) => sum + (elapsedByRoad.get(r.road_id) ?? NOMINAL_TICK_SEC), 0) /
-      junctionRoads.length;
+      junctionRoads.reduce(
+        (sum, r) => sum + (elapsedByRoad.get(r.road_id) ?? NOMINAL_TICK_SEC),
+        0,
+      ) / junctionRoads.length;
 
     const inputs: ApproachInput[] = junctionRoads.map((road) => {
       const state = stateByRoad.get(road.road_id);
       return {
         roadId: road.road_id,
         queue: queues.get(road.road_id) ?? 0,
-        previousQueue: state ? Math.round(Number(state.queue_exact)) : (previousQueue.get(road.road_id) ?? null),
+        previousQueue: state
+          ? Math.round(Number(state.queue_exact))
+          : (previousQueue.get(road.road_id) ?? null),
         // Green seconds this approach actually received inside the window.
         previousGreen: greenSecondsByRoad.get(road.road_id) ?? 0,
         previousArrivalRate: state ? Number(state.arrival_rate_vph) : null,
@@ -264,9 +264,7 @@ export const runTrafficTick = createServerFn({ method: "POST" }).handler(async (
         : 0;
       const predictedNextReading = Math.max(
         0,
-        Math.round(
-          approach.queue + (approach.arrivalRateVph / 3600) * nextHorizon - dischargeNext,
-        ),
+        Math.round(approach.queue + (approach.arrivalRateVph / 3600) * nextHorizon - dischargeNext),
       );
 
       modelStateRows.push({
@@ -340,7 +338,7 @@ export const runTrafficTick = createServerFn({ method: "POST" }).handler(async (
     })
     .filter((row): row is NonNullable<typeof row> => row !== null);
 
-  const chunk = <T,>(rows: T[], size = 200) => {
+  const chunk = <T>(rows: T[], size = 200) => {
     const out: T[][] = [];
     for (let i = 0; i < rows.length; i += size) out.push(rows.slice(i, i + size));
     return out;
@@ -378,7 +376,8 @@ export const runTrafficTick = createServerFn({ method: "POST" }).handler(async (
       .limit(200);
     const frameByCamera = new Map<number, number>();
     for (const row of (lastFrames ?? []) as Array<{ camera_id: number; frame_number: number }>) {
-      if (!frameByCamera.has(row.camera_id)) frameByCamera.set(row.camera_id, row.frame_number ?? 0);
+      if (!frameByCamera.has(row.camera_id))
+        frameByCamera.set(row.camera_id, row.frame_number ?? 0);
     }
 
     const analysisRows: Array<{
@@ -435,16 +434,6 @@ type PhaseModel = {
   queue_now: number;
 };
 
-/** Minimum seconds a phase must stay green before it can be pre-empted. */
-const MIN_PHASE_SEC = 8;
-/** Never hold a phase longer than this, even under heavy demand. */
-const MAX_PHASE_SEC = 90;
-/**
- * Extra pressure another approach needs before it pre-empts a running green
- * that has already served its minimum. Prevents phase flapping.
- */
-const PREEMPT_MARGIN = 0.25;
-
 /**
  * Runs the signals in real time: every call checks each junction's running
  * phase against the green time the model currently allocates it, ends the
@@ -459,7 +448,9 @@ export const advanceSignals = createServerFn({ method: "POST" }).handler(async (
   const [{ data: timingData }, { data: modelData }] = await Promise.all([
     supabaseAdmin
       .from("signal_timings")
-      .select("timing_id, road_id, junction_id, green_duration_sec, is_currently_green, updated_at"),
+      .select(
+        "timing_id, road_id, junction_id, green_duration_sec, is_currently_green, updated_at",
+      ),
     supabaseAdmin
       .from("model_road_state")
       .select("road_id, junction_id, green_sec, degree_saturation, queue_now"),
@@ -483,60 +474,44 @@ export const advanceSignals = createServerFn({ method: "POST" }).handler(async (
   const stamp = new Date(now).toISOString();
   const updates: Array<PhaseTiming & { timing_mode: string }> = [];
 
-  /** Pressure = how far past capacity this approach is running right now. */
-  const pressure = (roadId: number) => {
-    const model = modelByRoad.get(roadId);
-    if (!model) return 0;
-    return Number(model.degree_saturation) + Number(model.queue_now) / 200;
-  };
-
   for (const [, approaches] of byJunction) {
-    const sorted = [...approaches].sort((a, b) => a.road_id - b.road_id);
-    const current = sorted.find((row) => row.is_currently_green);
-    const elapsed = current ? (now - new Date(current.updated_at).getTime()) / 1000 : Infinity;
+    const phaseApproaches: PhaseApproach[] = approaches.map((row) => {
+      const model = modelByRoad.get(row.road_id);
+      return {
+        roadId: row.road_id,
+        isGreen: row.is_currently_green,
+        startedAtMs: new Date(row.updated_at).getTime(),
+        allocatedGreen: Number(model?.green_sec ?? row.green_duration_sec),
+        pressure: approachPressure(
+          model
+            ? {
+                degreeSaturation: Number(model.degree_saturation),
+                queueNow: Number(model.queue_now),
+              }
+            : null,
+        ),
+      };
+    });
 
-    const allocated = current
-      ? clamp(
-          Number(modelByRoad.get(current.road_id)?.green_sec ?? current.green_duration_sec),
-          MIN_PHASE_SEC,
-          MAX_PHASE_SEC,
-        )
-      : 0;
+    const decision = decidePhase(phaseApproaches, now);
+    if (!decision) continue;
 
-    // Best challenger: worst pressure among the approaches waiting on red.
-    let challenger: PhaseTiming | null = null;
-    let challengerPressure = -1;
-    for (const row of sorted) {
-      if (current && row.road_id === current.road_id) continue;
-      const p = pressure(row.road_id);
-      if (p > challengerPressure) {
-        challengerPressure = p;
-        challenger = row;
-      }
-    }
-
-    const servedGreen = elapsed >= allocated;
-    const preempted =
-      !!current &&
-      elapsed >= MIN_PHASE_SEC &&
-      challengerPressure > pressure(current.road_id) + PREEMPT_MARGIN;
-
-    if (current && !servedGreen && !preempted) continue;
+    const current = approaches.find((row) => row.road_id === decision.endRoadId);
+    const challenger = approaches.find((row) => row.road_id === decision.startRoadId);
     if (!challenger) continue;
 
-    const nextGreen = clamp(
-      Number(modelByRoad.get(challenger.road_id)?.green_sec ?? challenger.green_duration_sec),
-      MIN_PHASE_SEC,
-      MAX_PHASE_SEC,
-    );
-
     if (current) {
-      updates.push({ ...current, timing_mode: "ADAPTIVE", is_currently_green: false, updated_at: stamp });
+      updates.push({
+        ...current,
+        timing_mode: "ADAPTIVE",
+        is_currently_green: false,
+        updated_at: stamp,
+      });
     }
     updates.push({
       ...challenger,
       timing_mode: "ADAPTIVE",
-      green_duration_sec: Math.round(nextGreen),
+      green_duration_sec: decision.startGreen,
       is_currently_green: true,
       updated_at: stamp,
     });
