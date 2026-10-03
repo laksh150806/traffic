@@ -1,0 +1,1 @@
+ALTER VIEW public.v_junction_congestion SET (security_invoker = on);
