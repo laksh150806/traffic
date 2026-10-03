@@ -1,0 +1,175 @@
+== 04_plpgsql.sql ==
+
+-- CREATE TABLE IF NOT EXISTS public.cw_sensor_intake (
+
+-- CREATE TABLE IF NOT EXISTS public.cw_alert (
+
+-- CREATE TABLE IF NOT EXISTS public.cw_daily_report (
+
+-- CREATE OR REPLACE FUNCTION public.cw_grade(p_peak integer, p_capacity integer)
+
+-- CREATE OR REPLACE FUNCTION public.cw_check_intake()
+
+-- CREATE TRIGGER cw_trg_check_intake
+
+-- CREATE OR REPLACE FUNCTION public.cw_forward_intake()
+
+-- CREATE TRIGGER cw_trg_forward_intake
+
+-- CREATE OR REPLACE FUNCTION public.cw_try_submit(p_road integer, p_count integer)
+
+-- CREATE OR REPLACE PROCEDURE public.cw_build_daily_report(p_day date, p_zone_pattern text D
+
+-- CREATE OR REPLACE FUNCTION public.cw_open_busiest(p_zone text, p_cursor refcursor DEFAULT 
+
+-- CREATE OR REPLACE PROCEDURE public.cw_resolve_incident(p_incident bigint, INOUT p_minutes_
+
+-- Demonstrations --------------------------------------------------------------------------------
+
+-- T0  The trigger the app already has (log_phase_change): giving an approach the green writes a
+-- row to phase_log. Junction 1 is set to red everywhere, then its first approach is given the green.
+
+UPDATE public.signal_timings SET is_currently_green = false WHERE junction_id = 1
+
+OK
+
+SELECT p.log_id, p.junction_id, p.road_id, p.green_duration_sec, (p.started_at > timestamptz '2026-10-02') AS logged_by_trigger
+FROM public.phase_log p
+WHERE p.junction_id = 1
+ORDER BY p.log_id DESC
+LIMIT 2
+
+log_id | junction_id | road_id | green_duration_sec | logged_by_trigger
+-------+-------------+---------+--------------------+------------------
+3313   | 1           | 1       | 30                 | true
+48     | 1           | 1       | 27                 | false
+(2 rows)
+
+-- T1  Trigger 1 and 2: four submissions. One normal, one far over capacity (accepted, alert raised),
+-- one impossible, one for a road that does not exist.
+
+SELECT public.cw_try_submit(1, 40) AS result
+UNION ALL SELECT public.cw_try_submit(1, 190)
+UNION ALL SELECT public.cw_try_submit(1, 900)
+UNION ALL SELECT public.cw_try_submit(99999, 10)
+
+result
+--------------------------------------------------------------------------------------------------
+road 1, 40 vehicles: accepted
+road 1, 190 vehicles: accepted
+road 1, 900 vehicles: rejected (reading 900 is more than three times the capacity (120) of road 1)
+road 99999, 10 vehicles: rejected (road 99999 does not exist)
+(4 rows)
+
+-- T2  What the triggers left behind: the intake log (the rejected rows are gone), the copy in
+-- vehicle_counts, and the alert.
+
+SELECT intake_id, road_id, vehicle_count, status FROM public.cw_sensor_intake ORDER BY intake_id
+
+intake_id | road_id | vehicle_count | status
+----------+---------+---------------+------------------
+1         | 1       | 40            | ACCEPTED
+2         | 1       | 190           | ACCEPTED_OVERLOAD
+(2 rows)
+
+SELECT road_id, vehicle_count, source FROM public.vehicle_counts WHERE source = 'MANUAL' ORDER BY reading_id
+
+road_id | vehicle_count | source
+--------+---------------+-------
+1       | 40            | MANUAL
+1       | 190           | MANUAL
+(2 rows)
+
+SELECT road_id, junction_id, vehicle_count, max_capacity, message FROM public.cw_alert ORDER BY alert_id
+
+road_id | junction_id | vehicle_count | max_capacity | message
+--------+-------------+---------------+--------------+------------------------------------------------------------
+1       | 1           | 190           | 120          | NORTH approach holds 190 vehicles against a capacity of 120
+(1 row)
+
+-- T3  The cursor procedure: build the report for the sample day. The result row is the INOUT
+-- count of junctions written.
+
+CALL public.cw_build_daily_report(DATE '2026-10-01', '%', NULL)
+
+p_rows
+------
+69
+(1 row)
+
+SELECT junction_id, name, zone, total_vehicles, peak_vehicles, peak_time_ist, avg_green_sec, vehicle_sec_saved, incidents, grade
+FROM public.cw_daily_report
+WHERE report_day = DATE '2026-10-01'
+ORDER BY total_vehicles DESC, junction_id
+LIMIT 8
+
+junction_id | name                     | zone    | total_vehicles | peak_vehicles | peak_time_ist | avg_green_sec | vehicle_sec_saved | incidents | grade
+------------+--------------------------+---------+----------------+---------------+---------------+---------------+-------------------+-----------+------
+17          | Vadapalani Signal        | Central | 12575          | 577           | 18:30         | 43.5          | 10558             | 0         | D
+27          | Vyasarpadi Signal        | North   | 12568          | 566           | 09:00         | 43.5          | 9924              | 0         | D
+37          | Red Hills Junction       | North   | 12455          | 531           | 18:30         | 43.2          | 8949              | 0         | D
+7           | Teynampet Signal         | Central | 12448          | 519           | 18:30         | 43.2          | 8827              | 0         | D
+34          | Thiruvottiyur Signal     | North   | 12083          | 573           | 18:30         | 42.4          | 9486              | 0         | D
+14          | Egmore Station Junction  | Central | 12019          | 544           | 09:00         | 42.2          | 9499              | 0         | D
+24          | Chennai Central Junction | North   | 11908          | 506           | 18:30         | 41.9          | 7577              | 0         | D
+21          | Royapettah Signal        | Central | 11516          | 546           | 18:30         | 41.0          | 7756              | 0         | D
+(8 rows)
+
+-- T4  Grades across the network.
+
+SELECT grade, count(*) AS junctions, round(avg(peak_vehicles), 0) AS avg_peak
+FROM public.cw_daily_report
+WHERE report_day = DATE '2026-10-01'
+GROUP BY grade
+ORDER BY grade
+
+grade | junctions | avg_peak
+------+-----------+---------
+B     | 19        | 326
+C     | 30        | 405
+D     | 20        | 490
+(3 rows)
+
+SELECT public.cw_open_busiest('GST Corridor') AS cursor_name
+
+cursor_name
+-----------
+busiest
+(1 row)
+
+FETCH 3 FROM busiest
+
+name                   | peak_vehicles | rank_in_zone
+-----------------------+---------------+-------------
+SRM Main Gate Junction | 476           | 1
+Tambaram Junction      | 444           | 2
+Guduvancheri Junction  | 379           | 3
+(3 rows)
+
+FETCH 2 FROM busiest
+
+name                         | peak_vehicles | rank_in_zone
+-----------------------------+---------------+-------------
+Vandalur Junction            | 374           | 4
+Chengalpattu Bypass Junction | 307           | 5
+(2 rows)
+
+-- T6  The resolve procedure: end the accident at junction 3 (08:40 to 10:10) at 09:10. The result is
+-- how many minutes early it ended.
+
+CALL public.cw_resolve_incident(9001, NULL, timestamptz '2026-10-01 09:10+05:30')
+
+p_minutes_early
+---------------
+60
+(1 row)
+
+SELECT incident_id, kind, round(extract(epoch FROM (ends_at - starts_at)) / 60) AS minutes_open
+FROM public.incidents WHERE incident_id = 9001
+
+incident_id | kind     | minutes_open
+------------+----------+-------------
+9001        | ACCIDENT | 30
+(1 row)
+
+

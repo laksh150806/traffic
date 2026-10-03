@@ -12,11 +12,10 @@ Done
       a throttle for the control loop, set-based writes, a phase-change trigger, retention in SQL
 - [x] Every migration verified on an in-process Postgres (`npm run test:db`)
 - [x] Guided demo tour and a map that opens on the city, with glowing, pulsing jam markers
+- [x] Coursework SQL for the DBMS rubric, run and saved by `npm run rubric`
 
 Next
 
 - [ ] Calibrate the demand curve on a counted traffic dataset (placeholder curve today)
 - [ ] Live speed from a traffic API for the GST Corridor junctions
-- [ ] Coursework SQL: subqueries, correlated queries, views and joins, cursor and procedure
-      reports over the history tables
 - [ ] Run live mode against a real Supabase project end to end

@@ -1,0 +1,256 @@
+== 03_views_joins.sql ==
+
+-- Rubric item 3: Views and joins (5 marks)
+-- ---------------------------------------------------------------------------
+-- Four views (one built on another) and seven join queries: inner, left, right, full outer,
+-- self, cross, and a four-table join with a time condition. The views are prefixed cw_ so they
+-- are easy to tell from the ones the app uses; 99_cleanup.sql drops them.
+
+-- V1  Join of vehicle_counts and roads: vehicles arriving at each junction in each half hour.
+
+CREATE OR REPLACE VIEW public.cw_slot_totals AS
+SELECT r.junction_id,
+       vc.recorded_at,
+       sum(vc.vehicle_count)::int AS vehicles
+FROM public.vehicle_counts vc
+JOIN public.roads r USING (road_id)
+GROUP BY r.junction_id, vc.recorded_at
+
+OK
+
+-- V2  A view built on a view, with a window function: each junction's peak and its rank in its zone.
+
+CREATE OR REPLACE VIEW public.cw_junction_peak AS
+SELECT j.junction_id,
+       j.name,
+       j.zone,
+       max(s.vehicles) AS peak_vehicles,
+       round(avg(s.vehicles), 1) AS avg_vehicles,
+       rank() OVER (PARTITION BY j.zone ORDER BY max(s.vehicles) DESC) AS rank_in_zone
+FROM public.junctions j
+JOIN public.cw_slot_totals s USING (junction_id)
+GROUP BY j.junction_id, j.name, j.zone
+
+OK
+
+-- V3  Adaptive against the fixed timer, per junction (joins junctions to signal_history).
+
+CREATE OR REPLACE VIEW public.cw_adaptive_vs_fixed AS
+SELECT j.junction_id,
+       j.name,
+       j.zone,
+       round(avg(sh.predicted_delay_fixed_sec), 1) AS avg_delay_fixed_sec,
+       round(avg(sh.predicted_delay_adaptive_sec), 1) AS avg_delay_adaptive_sec,
+       sum(sh.estimated_wait_saved_sec) AS vehicle_seconds_saved,
+       count(*) FILTER (WHERE sh.predicted_delay_adaptive_sec > sh.predicted_delay_fixed_sec) AS decisions_worse,
+       count(*) AS decisions
+FROM public.junctions j
+JOIN public.signal_history sh USING (junction_id)
+GROUP BY j.junction_id, j.name, j.zone
+
+OK
+
+-- V4  Incident report: three tables joined, with the duration worked out.
+
+CREATE OR REPLACE VIEW public.cw_incident_report AS
+SELECT i.incident_id,
+       j.name AS junction,
+       j.zone,
+       r.direction AS approach,
+       i.kind,
+       round(extract(epoch FROM (i.ends_at - i.starts_at)) / 60) AS minutes
+FROM public.incidents i
+JOIN public.junctions j USING (junction_id)
+JOIN public.roads r ON r.road_id = i.road_id AND r.junction_id = i.junction_id
+
+OK
+
+-- J1  Inner join through a view: the five junctions where adaptive timing saved the most waiting.
+
+SELECT name, zone, avg_delay_fixed_sec, avg_delay_adaptive_sec, vehicle_seconds_saved
+FROM public.cw_adaptive_vs_fixed
+ORDER BY vehicle_seconds_saved DESC
+LIMIT 5
+
+name                    | zone    | avg_delay_fixed_sec | avg_delay_adaptive_sec | vehicle_seconds_saved
+------------------------+---------+---------------------+------------------------+----------------------
+Vadapalani Signal       | Central | 44.5                | 37.7                   | 10596
+Vyasarpadi Signal       | North   | 44.7                | 38.1                   | 9964
+Medavakkam Junction     | South   | 45.1                | 38.1                   | 9681
+Egmore Station Junction | Central | 43.0                | 36.6                   | 9539
+Thiruvottiyur Signal    | North   | 43.4                | 37.0                   | 9532
+(5 rows)
+
+-- J2  The incident report view.
+
+SELECT incident_id, junction, zone, approach, kind, minutes
+FROM public.cw_incident_report
+ORDER BY incident_id
+
+incident_id | junction                     | zone         | approach | kind         | minutes
+------------+------------------------------+--------------+----------+--------------+--------
+9001        | Chengalpattu Bypass Junction | GST Corridor | NORTH    | ACCIDENT     | 90
+9002        | Alandur Signal               | Central      | NORTH    | LANE_BLOCKED | 75
+9003        | Parrys Corner Signal         | North        | NORTH    | ROADWORK     | 300
+9004        | Villivakkam Junction         | North        | NORTH    | LANE_BLOCKED | 40
+9005        | Medavakkam Junction          | South        | NORTH    | SIGNAL_FAULT | 90
+9006        | Poonamallee Bypass Junction  | West         | NORTH    | ACCIDENT     | 45
+(6 rows)
+
+-- J3  Left join: every junction with its incident count, including the ones with none.
+
+SELECT j.junction_id, j.name, count(i.incident_id) AS incidents
+FROM public.junctions j
+LEFT JOIN public.incidents i USING (junction_id)
+GROUP BY j.junction_id, j.name
+ORDER BY incidents DESC, j.junction_id
+LIMIT 8
+
+junction_id | name                         | incidents
+------------+------------------------------+----------
+3           | Chengalpattu Bypass Junction | 1
+12          | Alandur Signal               | 1
+25          | Parrys Corner Signal         | 1
+31          | Villivakkam Junction         | 1
+47          | Medavakkam Junction          | 1
+58          | Poonamallee Bypass Junction  | 1
+1           | Tambaram Junction            | 0
+2           | Vandalur Junction            | 0
+(8 rows)
+
+-- J4  Right join: the same result written from the other side. Every junction survives because it
+-- is the right-hand table; the junctions with no incident show an empty incident_id.
+
+SELECT j.junction_id, j.name, i.incident_id, i.kind
+FROM public.incidents i
+RIGHT JOIN public.junctions j USING (junction_id)
+WHERE j.junction_id IN (1, 3, 12, 25)
+ORDER BY j.junction_id, i.incident_id
+
+junction_id | name                         | incident_id | kind
+------------+------------------------------+-------------+-------------
+1           | Tambaram Junction            | NULL        | NULL
+3           | Chengalpattu Bypass Junction | 9001        | ACCIDENT
+12          | Alandur Signal               | 9002        | LANE_BLOCKED
+25          | Parrys Corner Signal         | 9003        | ROADWORK
+(4 rows)
+
+-- J5  Full outer join: which junctions are heavily loaded in the morning, in the evening, both or
+-- neither? "Heavily loaded" means at least 300 vehicles in a half hour in that period.
+
+WITH am AS (
+  SELECT DISTINCT junction_id FROM public.cw_slot_totals
+  WHERE vehicles >= 300
+    AND extract(hour FROM (recorded_at AT TIME ZONE 'UTC') + interval '5 hours 30 minutes') BETWEEN 7 AND 10
+), pm AS (
+  SELECT DISTINCT junction_id FROM public.cw_slot_totals
+  WHERE vehicles >= 300
+    AND extract(hour FROM (recorded_at AT TIME ZONE 'UTC') + interval '5 hours 30 minutes') BETWEEN 17 AND 20
+)
+SELECT CASE WHEN am.junction_id IS NOT NULL AND pm.junction_id IS NOT NULL THEN 'both peaks'
+            WHEN am.junction_id IS NOT NULL THEN 'morning only'
+            ELSE 'evening only' END AS loaded,
+       count(*) AS junctions,
+       min(coalesce(am.junction_id, pm.junction_id)) AS example_junction_id
+FROM am
+FULL OUTER JOIN pm USING (junction_id)
+GROUP BY 1
+ORDER BY junctions DESC
+
+loaded       | junctions | example_junction_id
+-------------+-----------+--------------------
+both peaks   | 60        | 1
+evening only | 4         | 43
+morning only | 1         | 3
+(3 rows)
+
+-- J6  Self join: pairs of junctions in the same zone less than 1.5 km apart (a rough flat-earth
+-- distance, good enough at this scale: 1 degree of latitude is 111 km, of longitude 108 km here).
+
+SELECT a.name AS junction_a, b.name AS junction_b, a.zone,
+       round((sqrt(power((a.latitude - b.latitude) * 111, 2) + power((a.longitude - b.longitude) * 108, 2)))::numeric, 2) AS km_apart
+FROM public.junctions a
+JOIN public.junctions b
+  ON a.zone = b.zone
+ AND a.junction_id < b.junction_id
+ AND sqrt(power((a.latitude - b.latitude) * 111, 2) + power((a.longitude - b.longitude) * 108, 2)) < 1.5
+ORDER BY km_apart, a.junction_id
+LIMIT 8
+
+junction_a                  | junction_b                  | zone    | km_apart
+----------------------------+-----------------------------+---------+---------
+Broadway Junction           | Parrys Corner Signal        | North   | 0.34
+Guindy Signal               | Little Mount Junction       | Central | 0.49
+Kathipara Junction          | Alandur Signal              | Central | 0.60
+Gemini Flyover (Anna Salai) | Teynampet Signal            | Central | 0.67
+Adyar Signal                | Madhya Kailash Junction     | South   | 0.89
+Choolaimedu Signal          | Kodambakkam Bridge Junction | Central | 1.02
+Saidapet Bridge Junction    | Little Mount Junction       | Central | 1.04
+Madhya Kailash Junction     | Saidapet Kotturpuram Signal | South   | 1.05
+(8 rows)
+
+-- J7  Cross join: every zone against every part of the day, then joined to the readings, giving a
+-- grid of the average vehicles per half hour.
+
+SELECT z.zone, p.period, round(avg(s.vehicles), 0) AS avg_vehicles_per_half_hour
+FROM (SELECT DISTINCT zone FROM public.junctions) z
+CROSS JOIN (VALUES ('1 night', 0, 5), ('2 morning', 7, 10), ('3 midday', 11, 15), ('4 evening', 17, 20)) AS p(period, from_hour, to_hour)
+JOIN public.junctions j ON j.zone = z.zone
+JOIN public.cw_slot_totals s
+  ON s.junction_id = j.junction_id
+ AND extract(hour FROM (s.recorded_at AT TIME ZONE 'UTC') + interval '5 hours 30 minutes') BETWEEN p.from_hour AND p.to_hour
+GROUP BY z.zone, p.period
+ORDER BY z.zone, p.period
+
+zone         | period    | avg_vehicles_per_half_hour
+-------------+-----------+---------------------------
+Central      | 1 night   | 105
+Central      | 2 morning | 307
+Central      | 3 midday  | 223
+Central      | 4 evening | 341
+GST Corridor | 1 night   | 93
+GST Corridor | 2 morning | 272
+GST Corridor | 3 midday  | 197
+GST Corridor | 4 evening | 301
+North        | 1 night   | 106
+North        | 2 morning | 311
+North        | 3 midday  | 226
+North        | 4 evening | 345
+Outer        | 1 night   | 76
+Outer        | 2 morning | 224
+Outer        | 3 midday  | 162
+Outer        | 4 evening | 249
+South        | 1 night   | 89
+South        | 2 morning | 263
+South        | 3 midday  | 190
+South        | 4 evening | 291
+West         | 1 night   | 90
+West         | 2 morning | 263
+West         | 3 midday  | 192
+West         | 4 evening | 292
+(24 rows)
+
+-- J8  Four tables with a time condition in the join: did the controller give longer greens while an
+-- incident was open at the junction? Decisions are matched to incidents on the same junction whose
+-- window contains the decision time; the left join keeps decisions made with no incident open.
+
+SELECT CASE WHEN i.incident_id IS NULL THEN 'no incident open' ELSE 'incident open' END AS situation,
+       count(*) AS decisions,
+       round(avg(sh.allocated_green_sec), 1) AS avg_green_sec,
+       round(avg(sh.vehicle_count_at_decision), 1) AS avg_vehicles
+FROM public.signal_history sh
+JOIN public.roads r ON r.road_id = sh.road_id
+JOIN public.junctions j ON j.junction_id = r.junction_id
+LEFT JOIN public.incidents i
+  ON i.junction_id = j.junction_id
+ AND sh.decided_at BETWEEN i.starts_at AND i.ends_at
+GROUP BY 1
+ORDER BY 1
+
+situation        | decisions | avg_green_sec | avg_vehicles
+-----------------+-----------+---------------+-------------
+incident open    | 100       | 50.4          | 80.8
+no incident open | 13424     | 35.6          | 47.3
+(2 rows)
+
+

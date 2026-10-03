@@ -37,15 +37,16 @@ app runs in **demo mode** and simulates the whole network in the browser.
 
 Other scripts:
 
-| Script                | What it does                                                           |
-| --------------------- | ---------------------------------------------------------------------- |
-| `npm run build`       | Production build                                                       |
-| `npm run preview`     | Serve the production build                                             |
-| `npm test`            | Unit tests (model, simulator, controller, routing, SQL against seed)   |
-| `npm run test:db`     | Applies every migration to an in-process Postgres and checks it        |
-| `npm run build:setup` | Rebuilds `supabase/setup.sql` from the migrations                      |
-| `npm run typecheck`   | TypeScript, strict mode                                                |
-| `npm run lint`        | ESLint and Prettier                                                    |
+| Script                | What it does                                                         |
+| --------------------- | -------------------------------------------------------------------- |
+| `npm run build`       | Production build                                                     |
+| `npm run preview`     | Serve the production build                                           |
+| `npm test`            | Unit tests (model, simulator, controller, routing, SQL against seed) |
+| `npm run test:db`     | Applies every migration to an in-process Postgres and checks it      |
+| `npm run rubric`      | Runs the coursework SQL (`supabase/rubric`) and saves its output     |
+| `npm run build:setup` | Rebuilds `supabase/setup.sql` from the migrations                    |
+| `npm run typecheck`   | TypeScript, strict mode                                              |
+| `npm run lint`        | ESLint and Prettier                                                  |
 
 If the dev server keeps dying on a low-memory machine, use `npm run build` then
 `npm run preview` instead. It needs a fraction of the memory.
@@ -85,7 +86,7 @@ them.
    15 minute period) gives the predicted wait per vehicle. It is continuous through
    capacity and never falls as demand rises.
 5. **The fixed-timer baseline.** The adaptive plan is compared with a fixed plan that is
-   Webster-optimal for the junction's *all-day average* demand, which is how a real timer
+   Webster-optimal for the junction's _all-day average_ demand, which is how a real timer
    is set. It is not simulated separately: both waits come from the same formula.
 6. **Queue prediction.** Expected queue next = queue now + arrivals - expected discharge.
    The dashboard scores this against what happens and against the naive guess that the
@@ -106,7 +107,7 @@ to the average is already close to right when demand is average. At the peaks ma
 approaches are over capacity, and no timing plan can fix a road that is simply full.
 
 The dashboard shows the change as a signed number, and next to it how many junctions the
-adaptive plan is predicted to do *worse* at than the timer. Earlier versions of this
+adaptive plan is predicted to do _worse_ at than the timer. Earlier versions of this
 project compared against an equal-split 120 s timer, which made off-peak look like a 50 %
 gain; that figure was an artefact of the weak baseline.
 
@@ -135,6 +136,7 @@ supabase/
   migrations/               schema, seed data (69 junctions, 276 approaches), control functions
   setup.sql                 all migrations in one file for a new project
   tests/                    checks run on an in-process Postgres
+  rubric/                   coursework SQL: subqueries, views and joins, trigger, cursor, procedure
 DESIGN.md                   visual design notes
 docs/CRITIQUE.md            the adversarial review this version responds to
 ```

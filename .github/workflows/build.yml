@@ -19,4 +19,5 @@ jobs:
       # Applies every migration to an in-process Postgres and checks the constraints,
       # control functions, trigger and views behave.
       - run: npm run test:db
+      - run: npm run rubric
       - run: npm run build
