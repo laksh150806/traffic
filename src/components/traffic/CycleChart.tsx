@@ -35,15 +35,14 @@ export function CycleChart({
           <h2 className="text-lg font-semibold">Predicted waiting time per cycle</h2>
           <p className="text-xs text-muted-foreground">
             Modelled average wait per vehicle under the adaptive plan against the same demand run on
-            a fixed 30s / 120s plan.
+            a fixed plan (26 s green in a 120 s cycle).
           </p>
         </div>
         <span className="flex items-center gap-1.5 rounded-full border border-signal-low/40 bg-signal-low/10 px-3 py-1 text-xs font-medium text-signal-low transition-data">
           <TrendingDown className="h-3.5 w-3.5" />
-          <span className="numeric">{formatSaved(totalSaved)}</span> vehicle-waiting avoided
+          <span className="numeric">{formatSaved(totalSaved)}</span> of vehicle waiting avoided
         </span>
       </div>
-
 
       <div className="mt-4 h-[240px]">
         {loading ? (
@@ -70,8 +69,9 @@ export function CycleChart({
               />
               <Tooltip
                 contentStyle={{
-                  background: "var(--card)",
-                  border: "1px solid var(--border)",
+                  background: "oklch(0.22 0.06 280 / 0.6)",
+                  backdropFilter: "blur(16px) saturate(1.6)",
+                  border: "1px solid oklch(1 0 0 / 0.16)",
                   borderRadius: "8px",
                   fontSize: "12px",
                   color: "var(--foreground)",
@@ -100,7 +100,6 @@ export function CycleChart({
               />
             </LineChart>
           </ResponsiveContainer>
-
         )}
       </div>
     </section>

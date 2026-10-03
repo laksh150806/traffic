@@ -41,17 +41,17 @@ export function JunctionList({ junctions, selectedId, onSelect, loading }: Props
   return (
     <div className="panel flex h-full min-h-0 flex-col p-3">
       <div className="flex items-baseline justify-between">
-        <p className="meta-label">Signals monitored</p>
+        <p className="meta-label">Junctions</p>
         <span className="numeric text-sm">{junctions.length}</span>
       </div>
 
       <div className="relative mt-3">
-        <Search className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+        <Search className="pointer-events-none absolute left-3 top-3 h-3.5 w-3.5 text-muted-foreground" />
         <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search a signal…"
-          className="h-9 pl-8 text-sm"
+          placeholder="Search junctions"
+          className="glass-chip h-10 border-white/15 bg-white/5 pl-9 text-sm placeholder:text-muted-foreground/70"
           aria-label="Search junctions"
         />
       </div>
@@ -62,10 +62,10 @@ export function JunctionList({ junctions, selectedId, onSelect, loading }: Props
             key={item}
             type="button"
             onClick={() => setZone(item)}
-            className={`rounded-full border px-2.5 py-1 text-[11px] transition-data ${
+            className={`glass-chip px-3 py-1 text-[11px] transition-data ${
               zone === item
-                ? "border-primary/50 bg-primary/15 text-primary"
-                : "border-border text-muted-foreground hover:text-foreground"
+                ? "!border-primary/50 !bg-primary/20 text-primary"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
             {item === "ALL" ? "All zones" : item}
@@ -79,18 +79,18 @@ export function JunctionList({ junctions, selectedId, onSelect, loading }: Props
             key={item}
             type="button"
             onClick={() => setLevel(item)}
-            className={`rounded-full border px-2.5 py-1 text-[11px] transition-data ${
+            className={`glass-chip px-3 py-1 text-[11px] transition-data ${
               level === item
-                ? "border-primary/50 bg-primary/15 text-primary"
-                : "border-border text-muted-foreground hover:text-foreground"
+                ? "!border-primary/50 !bg-primary/20 text-primary"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            {item === "ALL" ? "All traffic" : item}
+            {item === "ALL" ? "Any traffic" : item}
           </button>
         ))}
       </div>
 
-      <div className="mt-3 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
+      <div className="mt-3 scroll-glass min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
         {loading
           ? Array.from({ length: 8 }).map((_, index) => (
               <Skeleton key={index} className="h-10 w-full" />
@@ -104,12 +104,12 @@ export function JunctionList({ junctions, selectedId, onSelect, loading }: Props
                   onClick={() => onSelect(junction.junction_id)}
                   className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-2 text-left transition-data ${
                     active
-                      ? "border-primary/50 bg-primary/10"
-                      : "border-transparent hover:border-border hover:bg-surface/50"
+                      ? "border-primary/50 bg-primary/12 shadow-[0_0_0_1px_oklch(0.82_0.13_205/0.2),0_12px_30px_-16px_var(--primary)]"
+                      : "border-transparent hover:border-white/10 hover:bg-white/6"
                   }`}
                 >
                   <span
-                    className={`h-2 w-2 shrink-0 rounded-full ${DOT[junction.congestion_level] ?? DOT['LOW']}`}
+                    className={`h-2 w-2 shrink-0 rounded-full ${DOT[junction.congestion_level] ?? DOT["LOW"]}`}
                   />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-xs font-medium">{junction.name}</span>
@@ -120,7 +120,9 @@ export function JunctionList({ junctions, selectedId, onSelect, loading }: Props
               );
             })}
         {!loading && filtered.length === 0 ? (
-          <p className="py-6 text-center text-xs text-muted-foreground">No signals match those filters.</p>
+          <p className="py-6 text-center text-xs text-muted-foreground">
+            No junctions match those filters.
+          </p>
         ) : null}
       </div>
     </div>

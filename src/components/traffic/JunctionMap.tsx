@@ -1,13 +1,21 @@
 import "leaflet/dist/leaflet.css";
 import { useEffect, useState } from "react";
-import { CircleMarker, MapContainer, TileLayer, Tooltip, useMap, useMapEvents } from "react-leaflet";
+import {
+  CircleMarker,
+  MapContainer,
+  TileLayer,
+  Tooltip,
+  useMap,
+  useMapEvents,
+} from "react-leaflet";
 import L from "leaflet";
 import type { JunctionSummary } from "@/lib/traffic-data";
 
+/** Canvas paths cannot read CSS variables, so these mirror the signal tokens as hex. */
 const LEVEL_COLOR: Record<string, string> = {
-  LOW: "var(--signal-low)",
-  MODERATE: "var(--signal-moderate)",
-  HIGH: "var(--signal-high)",
+  LOW: "#4ade80",
+  MODERATE: "#fbbf24",
+  HIGH: "#fb4d6a",
 };
 
 type Props = {
@@ -22,7 +30,9 @@ function FitToNetwork({ junctions }: { junctions: JunctionSummary[] }) {
   const [done, setDone] = useState(false);
   useEffect(() => {
     if (done || junctions.length === 0) return;
-    const bounds = L.latLngBounds(junctions.map((j) => [j.latitude, j.longitude] as [number, number]));
+    const bounds = L.latLngBounds(
+      junctions.map((j) => [j.latitude, j.longitude] as [number, number]),
+    );
     map.fitBounds(bounds, { padding: [32, 32] });
     setDone(true);
   }, [junctions, map, done]);
@@ -46,6 +56,7 @@ export default function JunctionMap({ junctions, selectedId, onSelect }: Props) 
       scrollWheelZoom
       className="h-full w-full"
       attributionControl
+      zoomControl={false}
     >
       <TileLayer
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -54,7 +65,7 @@ export default function JunctionMap({ junctions, selectedId, onSelect }: Props) 
       <FitToNetwork junctions={junctions} />
       <ZoomWatcher onZoom={setZoom} />
       {junctions.map((junction) => {
-        const color = LEVEL_COLOR[junction.congestion_level] ?? LEVEL_COLOR['LOW'];
+        const color = LEVEL_COLOR[junction.congestion_level] ?? LEVEL_COLOR["LOW"];
         const selected = junction.junction_id === selectedId;
         // Volume drives size, zoom keeps dense corridors readable.
         const load = Math.min(1, junction.avg_vehicle_count / 80);

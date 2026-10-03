@@ -1,4 +1,12 @@
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { Video } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { CctvPoint } from "@/lib/traffic-data";
@@ -18,12 +26,12 @@ export function CctvPanel({ data, loading }: { data: CctvPoint[]; loading: boole
             Live feed — vehicles detected per analysed frame across this junction's cameras.
           </p>
         </div>
-        <span className="flex items-center gap-1.5 rounded-full border border-border bg-surface/60 px-3 py-1 text-[11px] text-muted-foreground">
+        <span className="flex items-center gap-1.5 rounded-full glass-inset px-3 py-1 text-[11px] text-muted-foreground">
           <span className="h-1.5 w-1.5 rounded-full bg-signal-high signal-live" />
           LIVE
           {latest ? (
             <span className="numeric ml-1 text-foreground">
-              {latest.camera_name} · {Math.round(latest.confidence_avg * 100)}% conf.
+              {latest.camera_name}, {Math.round(latest.confidence_avg * 100)}% confidence
             </span>
           ) : null}
         </span>
@@ -57,8 +65,9 @@ export function CctvPanel({ data, loading }: { data: CctvPoint[]; loading: boole
               />
               <Tooltip
                 contentStyle={{
-                  background: "var(--card)",
-                  border: "1px solid var(--border)",
+                  background: "oklch(0.22 0.06 280 / 0.6)",
+                  backdropFilter: "blur(16px) saturate(1.6)",
+                  border: "1px solid oklch(1 0 0 / 0.16)",
                   borderRadius: "8px",
                   fontSize: "12px",
                   color: "var(--foreground)",

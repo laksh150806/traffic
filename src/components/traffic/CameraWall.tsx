@@ -67,8 +67,8 @@ function CameraTileView({
   const hidden = Math.max(0, queue - MAX_DRAWN);
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-black/40">
-      <div className="flex items-center justify-between gap-2 border-b border-border bg-surface/60 px-2.5 py-1.5">
+    <div className="glass-inset overflow-hidden bg-black/40">
+      <div className="flex items-center justify-between gap-2 border-b border-border bg-white/5 px-2.5 py-1.5">
         <span className="flex min-w-0 items-center gap-1.5">
           <span
             className={`h-1.5 w-1.5 shrink-0 rounded-full ${
@@ -78,13 +78,11 @@ function CameraTileView({
           <span className="truncate text-[11px] font-medium">{camera.camera_name}</span>
         </span>
         <span
-          className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-            green
-              ? "bg-signal-low/15 text-signal-low"
-              : "bg-signal-high/15 text-signal-high"
+          className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+            green ? "bg-signal-low/15 text-signal-low" : "bg-signal-high/15 text-signal-high"
           }`}
         >
-          {camera.direction} · {green ? "green" : "red"}
+          {camera.direction}, {green ? "green" : "red"}
         </span>
       </div>
 
@@ -95,8 +93,12 @@ function CameraTileView({
             <span className="text-[11px]">Signal lost</span>
           </div>
         ) : (
-          <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full" role="img"
-            aria-label={`${camera.direction} approach camera view with ${queue} vehicles detected`}>
+          <svg
+            viewBox="0 0 100 100"
+            className="absolute inset-0 h-full w-full"
+            role="img"
+            aria-label={`${camera.direction} approach camera view with ${queue} vehicles detected`}
+          >
             {/* road surface */}
             <rect x="0" y="0" width="100" height="100" fill="oklch(0.22 0.005 285)" />
             <rect x="4" y="0" width="92" height="100" fill="oklch(0.26 0.004 285)" />
@@ -159,8 +161,8 @@ function CameraTileView({
         {!offline ? (
           <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-1.5 font-mono text-[9px] text-foreground/80">
             <div className="flex justify-between">
-              <span>FRAME {frame}</span>
-              <span>{Math.round(camera.confidence_avg * 100)}% CONF</span>
+              <span>frame {frame}</span>
+              <span>{Math.round(camera.confidence_avg * 100)}% confidence</span>
             </div>
             <div className="flex items-end justify-between">
               <span className="rounded bg-black/50 px-1 py-0.5 text-signal-low">
@@ -208,7 +210,7 @@ export function CameraWall({
         </div>
         <span
           title="There is no public video feed from Chennai's traffic cameras, so each view is drawn from the live demand simulation and model state rather than filmed."
-          className="flex items-center gap-1.5 rounded-full border border-signal-moderate/40 bg-signal-moderate/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-signal-moderate"
+          className="flex items-center gap-1.5 rounded-full border border-signal-moderate/40 bg-signal-moderate/10 px-3 py-1 text-[11px] font-medium text-signal-moderate"
         >
           <ScanLine className="h-3 w-3" />
           Simulated view

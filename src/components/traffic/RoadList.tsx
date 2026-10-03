@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Camera, Radio } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TiltCard } from "@/components/space/TiltCard";
 import type { RoadState } from "@/lib/traffic-data";
 
 const DIRECTION_ICON = {
@@ -60,9 +61,12 @@ export function RoadList({ roads, loading }: { roads: RoadState[]; loading: bool
           ? Math.max(0, road.green_duration_sec - elapsed)
           : null;
         return (
-          <div
+          <TiltCard
             key={road.road_id}
-            className="rounded-lg border border-border bg-surface/40 p-3 transition-data hover:border-input hover:bg-surface/70"
+            max={3}
+            className={`glass-inset transition-data p-3 ${
+              road.is_currently_green ? "shadow-[0_0_28px_-10px_var(--signal-low)]" : ""
+            }`}
           >
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-2.5">
@@ -83,7 +87,7 @@ export function RoadList({ roads, loading }: { roads: RoadState[]; loading: bool
 
               <div className="flex items-center gap-2">
                 <span
-                  className={`rounded-full border px-2 py-0.5 text-[11px] font-medium tracking-wide ${
+                  className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
                     road.timing_mode === "ADAPTIVE"
                       ? "border-primary/40 bg-primary/10 text-primary"
                       : "border-border bg-muted text-muted-foreground"
@@ -107,13 +111,14 @@ export function RoadList({ roads, loading }: { roads: RoadState[]; loading: bool
                 <p className="meta-label">Vehicles</p>
                 <p className="numeric text-xl transition-data">{road.vehicle_count}</p>
                 <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
-                  <div className={`h-full rounded-full transition-data ${tone}`} style={{ width: `${pct}%` }} />
+                  <div
+                    className={`h-full rounded-full transition-data ${tone}`}
+                    style={{ width: `${pct}%` }}
+                  />
                 </div>
               </div>
               <div>
-                <p className="meta-label">
-                  {remaining !== null ? "Green now" : "Next green"}
-                </p>
+                <p className="meta-label">{remaining !== null ? "Green now" : "Next green"}</p>
                 <p className="numeric text-xl text-primary transition-data">
                   {road.green_duration_sec}
                   <span className="ml-0.5 text-xs text-muted-foreground">s</span>
@@ -144,9 +149,9 @@ export function RoadList({ roads, loading }: { roads: RoadState[]; loading: bool
               ) : (
                 <Radio className="h-3 w-3" />
               )}
-              {road.source === "CCTV_ANALYSIS" ? "CCTV detection" : "Loop sensor"}
+              {road.source === "CCTV_ANALYSIS" ? "CCTV detection" : "Simulated sensor"}
             </p>
-          </div>
+          </TiltCard>
         );
       })}
     </div>
