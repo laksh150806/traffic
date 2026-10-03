@@ -3,6 +3,7 @@
  * the in-browser demo engine, so both behave identically. No I/O in here.
  */
 import { FIXED_GREEN, clamp, saturationFlow } from "@/lib/traffic-model";
+import type { CongestionLevel } from "@/lib/traffic-types";
 
 /**
  * Deterministic per-road "personality": how heavily loaded this approach runs
@@ -12,6 +13,13 @@ export function loadFor(roadId: number) {
   const seed = Math.sin(roadId * 12.9898) * 43758.5453;
   const frac = seed - Math.floor(seed);
   return 0.45 + frac * 0.95;
+}
+
+/** Traffic-light colour for a junction from the mean degree of saturation of its approaches. */
+export function levelFor(avgSaturation: number): CongestionLevel {
+  if (avgSaturation >= 0.95) return "HIGH";
+  if (avgSaturation >= 0.75) return "MODERATE";
+  return "LOW";
 }
 
 /** Chennai (UTC+5:30) rush hour shaping of demand. */

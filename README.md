@@ -2,8 +2,21 @@
 
 Adaptive signal control for 69 Chennai junctions. A queue model sets green times from
 how many vehicles are waiting, and the dashboard compares the predicted wait against a
-fixed timer. The map is a 3D glass city: every junction is a column whose height and
-colour show congestion.
+fixed timer.
+
+It works like a maps app for a traffic control room:
+
+- **Explore.** A map of all 69 junctions coloured by congestion, a ranked "needs attention"
+  list, and search. Select a junction for its wait times, a typical-day chart and the live
+  signal.
+- **Time bar.** Drag it to see the whole network at any hour in the next 24 hours, or jump
+  to the morning or evening peak. Ahead of now, the map shows the model's forecast.
+- **Directions.** Pick two junctions (or drop pins) and get routes with the delay of every
+  signal on the way counted, the fastest route first, and how much the adaptive timing saves
+  against fixed timers. Roads and base drive time come from OSRM's public demo server; if it
+  cannot be reached the page says so and falls back to a straight-line estimate.
+- **Inspector.** The queue model's numbers for the selected junction, with a 3D junction view
+  of queued vehicles and the signal heads.
 
 ## Run it
 
@@ -76,9 +89,12 @@ shows this as it is rather than hiding it.
 ```
 src/
   routes/index.tsx          the dashboard page
-  components/space/         3D scene (city, junction hologram), stage, glass helpers
+  components/ops/           map, search, time bar, place card, directions, attention list
+  components/space/         3D junction view and the safe WebGL wrapper
   components/traffic/       lists, charts, camera wall, scenario controls
   lib/traffic-model.ts      Webster maths
+  lib/forecast.ts           steady-state forecast of every junction for any hour
+  lib/routing.ts            OSRM client, junctions along a route, signal delay on a trip
   lib/sim-core.ts           queue step and phase decision shared by browser and server
   lib/demo-engine.ts        the in-browser world used in demo mode
   lib/traffic-data.ts       data access, demo or Supabase
@@ -88,9 +104,13 @@ supabase/migrations/        schema and seed data (69 junctions, 276 approaches)
 DESIGN.md                   visual design notes
 ```
 
-The 3D views are defensive: if WebGL is missing, the GPU resets, or the frame rate
-collapses, the page falls back to the street map instead of failing. Rendering is
-capped at 30 frames per second and pauses when the canvas is off screen.
+The 3D junction view is defensive: if WebGL is missing, the GPU resets, or the frame rate
+collapses, it is replaced by a short note instead of failing the page. Rendering is capped
+at 30 frames per second and pauses when the canvas is off screen.
+
+The forecast and trip times are modelled from the same demand rule the simulator uses, not
+measured: vehicle counts are simulated, so a forecast is a model prediction, not a sensor
+reading.
 
 ## Setting up your own Supabase project (live mode)
 

@@ -12,6 +12,7 @@ import {
   decidePhase,
   greenSecondsHeld,
   stepQueue,
+  levelFor,
   timeOfDayFactor,
   type PhaseApproach,
 } from "@/lib/sim-core";
@@ -430,12 +431,6 @@ export function demoAdvance(nowMs = Date.now()) {
 // ---------------------------------------------------------------------------
 // Reads (same shapes the Supabase data layer returns)
 // ---------------------------------------------------------------------------
-
-function levelFor(avgSaturation: number): CongestionLevel {
-  if (avgSaturation >= 0.95) return "HIGH";
-  if (avgSaturation >= 0.75) return "MODERATE";
-  return "LOW";
-}
 
 export function demoFetchJunctions(): JunctionSummary[] {
   const w = ensureWorld();

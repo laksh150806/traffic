@@ -1,9 +1,11 @@
 # Design: Aurora Glass
 
-Mission control for a city, built from frosted glass. The Chennai signal network is a 3D glass
-city: every junction is a light column whose height and colour show congestion, joined by a faint
-network, and the operator works from glass panels floating over a deep indigo aurora. The 3D city is
-the one memorable thing; everything around it is quiet, translucent and disciplined.
+A control room for a city, built from frosted glass. The Chennai signal network is a real map:
+every junction is a dot coloured by congestion, and the operator works from glass panels floating
+over a deep indigo aurora. The map answers three questions: where is it bad, what will it be like
+later, and what does a trip cost once the signals are counted. Everything around it is quiet,
+translucent and disciplined. The one 3D piece is the junction view, which earns its place by showing
+queues and signal heads you cannot see on a map.
 
 ## Palette
 
@@ -29,18 +31,18 @@ Status colours carry meaning (free-flowing, busy, jammed). They are not used as 
 ## Layout
 
 ```
- [ dock: mark, 3D city | Street map, status, recalculate ]
- [ junction rail ] [        3D city stage        ] [ inspector ]
- [  glass 300px  ] [ HUD: selected + KPIs over scene ] [ glass 460px ]
+ [ dock: mark, status, recalculate ]
+ [ Explore | Directions ] [ map: search, legend, time bar ] [ place card + detail ]
+ [   glass 290-350px   ] [                               ] [    glass 330-430px   ]
 ```
 
-Mobile stacks: stage first (360px tall), then the inspector, then the junction list.
+Mobile stacks: map first (520px tall), then Explore or Directions, then the place card and detail.
 
 ## Motion
 
-- One orchestrated moment: the camera glides to the selected junction (eased, ~1s).
-- Columns grow or shrink to their congestion and pulse a floor ring. Nothing else moves unprompted.
-- Cards tilt a few degrees toward the pointer and catch a moving highlight.
+- One orchestrated moment: the map flies to the selected junction (~0.8s).
+- Nothing else moves unprompted; the signal heads in the junction view pulse while green.
+- Approach cards tilt a few degrees toward the pointer.
 - Numbers ease to new values. Everything respects `prefers-reduced-motion`.
 - Animate transform and opacity only.
 

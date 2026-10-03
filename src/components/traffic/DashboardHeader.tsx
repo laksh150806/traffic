@@ -1,6 +1,5 @@
-import { Box, Map as MapIcon, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import type { DataMode } from "@/lib/data-mode";
-import type { StageView } from "@/components/space/CityStage";
 
 function timeAgo(iso: string | null) {
   if (!iso) return "waiting for data";
@@ -38,24 +37,15 @@ function Mark() {
   );
 }
 
-const VIEWS: Array<{ id: StageView; label: string; icon: typeof Box }> = [
-  { id: "city", label: "3D city", icon: Box },
-  { id: "street", label: "Street map", icon: MapIcon },
-];
-
 export function DashboardHeader({
   lastUpdated,
   onRecalculate,
   busy,
-  view,
-  onViewChange,
   mode,
 }: {
   lastUpdated: string | null;
   onRecalculate: () => void;
   busy: boolean;
-  view: StageView;
-  onViewChange: (view: StageView) => void;
   mode: DataMode;
 }) {
   const demo = mode === "demo";
@@ -67,31 +57,8 @@ export function DashboardHeader({
           <h1 className="text-base font-semibold leading-tight md:text-lg">
             Smart Traffic Management
           </h1>
-          <p className="meta-label leading-tight">Adaptive signals across Chennai</p>
+          <p className="meta-label leading-tight">Chennai signal control room</p>
         </div>
-      </div>
-
-      <div
-        role="group"
-        aria-label="Map view"
-        className="glass-chip order-3 flex w-full gap-1 p-1 md:order-none md:w-auto"
-      >
-        {VIEWS.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            type="button"
-            aria-pressed={view === id}
-            onClick={() => onViewChange(id)}
-            className={`transition-data flex flex-1 items-center justify-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-medium md:flex-none ${
-              view === id
-                ? "bg-primary/20 text-primary shadow-[0_0_0_1px_oklch(0.82_0.13_205/0.4),0_6px_18px_-8px_var(--primary)]"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Icon className="h-3.5 w-3.5" />
-            {label}
-          </button>
-        ))}
       </div>
 
       <div className="flex items-center gap-3">
