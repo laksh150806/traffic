@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { useEffect, useState, type CSSProperties } from "react";
+import { Play, RefreshCw } from "lucide-react";
 import type { DataMode } from "@/lib/data-mode";
 
 function timeAgo(iso: string | null) {
@@ -43,11 +43,15 @@ export function DashboardHeader({
   onRecalculate,
   busy,
   mode,
+  onPlayDemo,
+  demoPlaying = false,
 }: {
   lastUpdated: string | null;
   onRecalculate: () => void;
   busy: boolean;
   mode: DataMode;
+  onPlayDemo?: () => void;
+  demoPlaying?: boolean;
 }) {
   const demo = mode === "demo";
   // Re-render now and then so "Updated 12s ago" keeps counting between data refreshes.
@@ -84,6 +88,18 @@ export function DashboardHeader({
           <p className="meta-label leading-tight">Updated</p>
           <p className="numeric text-xs text-foreground">{timeAgo(lastUpdated)}</p>
         </div>
+        {onPlayDemo ? (
+          <button
+            type="button"
+            onClick={onPlayDemo}
+            disabled={demoPlaying}
+            style={{ "--tint": "var(--nebula)" } as CSSProperties}
+            className="glass-button inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold disabled:opacity-60"
+          >
+            <Play className="h-3.5 w-3.5" aria-hidden />
+            {demoPlaying ? "Demo running" : "Play demo"}
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={onRecalculate}

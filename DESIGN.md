@@ -9,15 +9,15 @@ queues and signal heads you cannot see on a map.
 
 ## Palette
 
-| Token | Value | Use |
-| --- | --- | --- |
-| Void | `oklch(0.13 0.03 275)` | page background, with a saturated aurora wash for the glass to refract |
-| Deep space | `oklch(0.17 0.04 272)` | inset surfaces |
-| Glass | `oklch(0.22 0.045 275 / 0.55)` | panels, blurred 20px |
-| Aurora | `oklch(0.82 0.13 205)` | primary accent, live data |
-| Nebula | `oklch(0.68 0.19 295)` | secondary accent, glow |
-| Starlight | `oklch(0.96 0.01 270)` | text |
-| Signal low / moderate / high | green / amber / red | traffic status only, never decoration |
+| Token                        | Value                          | Use                                                                    |
+| ---------------------------- | ------------------------------ | ---------------------------------------------------------------------- |
+| Void                         | `oklch(0.13 0.03 275)`         | page background, with a saturated aurora wash for the glass to refract |
+| Deep space                   | `oklch(0.17 0.04 272)`         | inset surfaces                                                         |
+| Glass                        | `oklch(0.22 0.045 275 / 0.55)` | panels, blurred 20px                                                   |
+| Aurora                       | `oklch(0.82 0.13 205)`         | primary accent, live data                                              |
+| Nebula                       | `oklch(0.68 0.19 295)`         | secondary accent, glow                                                 |
+| Starlight                    | `oklch(0.96 0.01 270)`         | text                                                                   |
+| Signal low / moderate / high | green / amber / red            | traffic status only, never decoration                                  |
 
 Status colours carry meaning (free-flowing, busy, jammed). They are not used as accents.
 
@@ -41,6 +41,8 @@ Mobile stacks: map first (520px tall), then Explore or Directions, then the plac
 ## Motion
 
 - One orchestrated moment: the map flies to the selected junction (~0.8s).
+- The demo tour is the showpiece: a day of traffic sweeps across the map (about 40 seconds),
+  jammed junctions glow and send rings outward, and a caption card narrates each stop.
 - Nothing else moves unprompted; the signal heads in the junction view pulse while green.
 - Approach cards tilt a few degrees toward the pointer.
 - Numbers ease to new values. Everything respects `prefers-reduced-motion`.

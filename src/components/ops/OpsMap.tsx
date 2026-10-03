@@ -3,6 +3,7 @@ import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import {
   CircleMarker,
   MapContainer,
+  Marker,
   Polyline,
   TileLayer,
   Tooltip,
@@ -46,6 +47,29 @@ const prefersReducedMotion = () =>
 const isTouchOnly = () =>
   typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
 
+/** A ring that spreads out from a jammed junction. The motion is CSS, see .pulse-ring. */
+const PULSE_ICON = L.divIcon({
+  className: "pulse-ring",
+  html: "<span></span><span></span>",
+  iconSize: [56, 56],
+  iconAnchor: [28, 28],
+});
+
+/**
+ * The core of the network, ignoring the few far-out junctions on the Chengalpattu and Ennore
+ * roads, so the first view is the city and not half of Tamil Nadu.
+ */
+function coreBounds(junctions: JunctionSummary[]) {
+  const trim = (values: number[]) => {
+    const sorted = [...values].sort((a, b) => a - b);
+    const cut = Math.floor(sorted.length * 0.04);
+    return [sorted[cut] ?? sorted[0] ?? 0, sorted[sorted.length - 1 - cut] ?? 0] as const;
+  };
+  const [south, north] = trim(junctions.map((j) => j.latitude));
+  const [west, east] = trim(junctions.map((j) => j.longitude));
+  return L.latLngBounds([south, west], [north, east]);
+}
+
 /** Frame the whole network once, then follow the selection and any route. */
 function Camera({
   junctions,
@@ -56,6 +80,7 @@ function Camera({
   const map = useMap();
   const framed = useRef(false);
   const lastSelected = useRef<number | null>(null);
+  const firstSelection = useRef(true);
 
   useEffect(() => {
     const container = map.getContainer();
@@ -66,12 +91,28 @@ function Camera({
     );
   }, [map]);
 
+  // Fit once the map has a real size. The panel is laid out after the lazy map mounts, and a fit
+  // against a tiny box zooms out to the whole state.
   useEffect(() => {
     if (framed.current || junctions.length === 0) return;
-    framed.current = true;
-    map.fitBounds(L.latLngBounds(junctions.map((j) => [j.latitude, j.longitude])), {
-      padding: [48, 48],
-    });
+    const container = map.getContainer();
+    const fit = () => {
+      if (framed.current) return;
+      if (container.clientWidth < 240 || container.clientHeight < 240) return;
+      framed.current = true;
+      map.invalidateSize({ animate: false });
+      map.fitBounds(coreBounds(junctions), {
+        paddingTopLeft: [40, 84],
+        paddingBottomRight: [64, 120],
+        maxZoom: 12,
+        animate: false,
+      });
+    };
+    fit();
+    if (framed.current) return;
+    const observer = new ResizeObserver(fit);
+    observer.observe(container);
+    return () => observer.disconnect();
   }, [junctions, map]);
 
   // The set of roads, regardless of the order they are ranked in, decides when to refit.
@@ -90,6 +131,11 @@ function Camera({
   useEffect(() => {
     if (selectedId === null || selectedId === lastSelected.current) return;
     lastSelected.current = selectedId;
+    // The junction picked for the first screen should not pull the camera off the city view.
+    if (firstSelection.current) {
+      firstSelection.current = false;
+      return;
+    }
     const j = junctions.find((item) => item.junction_id === selectedId);
     if (!j || routes.length > 0) return;
     const zoom = Math.max(map.getZoom(), 13);
@@ -199,20 +245,42 @@ const JunctionMarker = memo(function JunctionMarker({
     [color, selected, crossed, dim],
   );
   const handlers = useMemo(() => ({ click: () => onSelect(id) }), [id, onSelect]);
+  const halo = useMemo(
+    () => ({
+      stroke: false,
+      fillColor: color,
+      fillOpacity: (level === "HIGH" ? 0.26 : 0.16) * dim,
+      interactive: false,
+    }),
+    [color, level, dim],
+  );
 
   return (
-    <CircleMarker
-      center={center}
-      radius={selected ? base + 4 : crossed ? base + 2 : base}
-      pathOptions={pathOptions}
-      eventHandlers={handlers}
-    >
-      <Tooltip direction="top" offset={[0, -8]} opacity={1}>
-        <span className="font-medium">{name}</span>
-        <br />
-        {zone}, {level.toLowerCase()}, avg {avg} vehicles
-      </Tooltip>
-    </CircleMarker>
+    <>
+      {level !== "LOW" ? (
+        <CircleMarker
+          center={center}
+          radius={base + (level === "HIGH" ? 16 : 10)}
+          pathOptions={halo}
+          interactive={false}
+        />
+      ) : null}
+      {level === "HIGH" && dim === 1 ? (
+        <Marker position={center} icon={PULSE_ICON} interactive={false} keyboard={false} />
+      ) : null}
+      <CircleMarker
+        center={center}
+        radius={selected ? base + 4 : crossed ? base + 2 : base}
+        pathOptions={pathOptions}
+        eventHandlers={handlers}
+      >
+        <Tooltip direction="top" offset={[0, -8]} opacity={1}>
+          <span className="font-medium">{name}</span>
+          <br />
+          {zone}, {level.toLowerCase()}, avg {avg} vehicles
+        </Tooltip>
+      </CircleMarker>
+    </>
   );
 });
 

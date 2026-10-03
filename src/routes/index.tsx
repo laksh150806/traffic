@@ -33,6 +33,8 @@ import { ModelPanel } from "@/components/traffic/ModelPanel";
 import { ScenarioPanel } from "@/components/traffic/ScenarioPanel";
 import { Attention } from "@/components/ops/Attention";
 import { DirectionsPanel } from "@/components/ops/DirectionsPanel";
+import { TourCaption, TourInvite } from "@/components/ops/DemoTour";
+import { useDemoTour } from "@/components/ops/useDemoTour";
 import type { Endpoint } from "@/components/ops/OpsMap";
 import { PlaceCard } from "@/components/ops/PlaceCard";
 import { SearchBox } from "@/components/ops/SearchBox";
@@ -169,6 +171,7 @@ function Dashboard() {
   const [pick, setPick] = useState<"from" | "to" | null>(null);
   const [routeId, setRouteId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [inviteDismissed, setInviteDismissed] = useState(false);
   const running = useRef(false);
   const advancing = useRef(false);
 
@@ -403,6 +406,55 @@ function Dashboard() {
 
   const levelOf = (id: number) => forecast.get(id)?.level ?? "LOW";
 
+  // The guided demo drives the same controls a person would use.
+  const tourSnapshot = useCallback(
+    (ms: number) => {
+      const when = new Date(ms);
+      const factor = getScenarioFactor();
+      const incidents = new Set<number>();
+      for (const [id, until] of getIncidentEnds()) if (until > when.getTime()) incidents.add(id);
+      const all = forecastNetwork(when, {
+        ...(factor === undefined || ms > base.getTime() + 300_000 ? {} : { factor }),
+        incidents,
+      });
+      const worst = all.reduce<(typeof all)[number] | null>(
+        (best, f) => (best === null || f.saturation > best.saturation ? f : best),
+        null,
+      );
+      const seed = worst ? SEED_JUNCTIONS.find((j) => j.id === worst.junctionId) : undefined;
+      return {
+        jammed: all.filter((f) => f.level === "HIGH").length,
+        total: all.length,
+        worst: seed ? { id: seed.id, name: seed.name, zone: seed.zone } : null,
+      };
+    },
+    [base],
+  );
+  const tour = useDemoTour({
+    base,
+    reducedMotion: reduceMotion,
+    setTime: setTargetMs,
+    snapshot: tourSnapshot,
+    select: (id) => {
+      setPick(null);
+      setSelectedId(id);
+    },
+    showTrip: (fromId, toId) => {
+      const a = SEED_JUNCTIONS.find((j) => j.id === fromId);
+      const b = SEED_JUNCTIONS.find((j) => j.id === toId);
+      if (!a || !b) return;
+      setPick(null);
+      setFrom({ lat: a.lat, lng: a.lng, label: a.name });
+      setTo({ lat: b.lat, lng: b.lng, label: b.name });
+      setTab("directions");
+    },
+    clearTrip: () => {
+      setFrom(null);
+      setTo(null);
+      setTab("explore");
+    },
+  });
+
   // The card shows the running model's own figures for the present, and the forecast for later,
   // so it never disagrees with the panels beneath it.
   const selectedForecast = selected ? forecast.get(selected.junction_id) : undefined;
@@ -486,6 +538,7 @@ function Dashboard() {
         onRecalculate={() => void recalculate()}
         busy={busy}
         mode={DATA_MODE}
+        {...(isDemo ? { onPlayDemo: () => void tour.start(), demoPlaying: tour.active } : {})}
       />
 
       {backendDown || emptyDb ? (
@@ -525,6 +578,8 @@ function Dashboard() {
               </ClientOnly>
             </div>
 
+            <div className="map-vignette absolute inset-0 z-[5]" aria-hidden />
+
             <div className="hud pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-wrap items-start justify-between gap-3 p-3">
               <div className="pointer-events-auto w-full max-w-[340px]">
                 <SearchBox
@@ -546,6 +601,17 @@ function Dashboard() {
                 ))}
               </ul>
             </div>
+
+            {tour.caption ? (
+              <TourCaption caption={tour.caption} onStop={tour.stop} />
+            ) : isDemo && !isForecast && jammed === 0 && !pick && !inviteDismissed ? (
+              <TourInvite
+                onStart={() => {
+                  setInviteDismissed(true);
+                  void tour.start();
+                }}
+              />
+            ) : null}
 
             {pick ? (
               <p

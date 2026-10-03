@@ -16,6 +16,10 @@ It works like a maps app for a traffic control room:
   it, the fastest route first, and how much the adaptive timing saves against fixed timers.
   Roads and base drive time come from OSRM's public demo server; if it cannot be reached
   the page says so and falls back to a straight-line estimate.
+- **Play demo.** One button runs a guided tour: a simulated day sweeps across the map with a
+  live count of jammed junctions, the camera stops at the worst junction of each rush hour, then
+  a trip is priced across the city. It drives the same controls a person would, so what it shows
+  is the real model, played back quickly. Esc stops it.
 - **Inspector.** The queue model's numbers for the selected junction, with a 3D junction view
   of queued vehicles and the signal heads.
 

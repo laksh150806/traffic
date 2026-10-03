@@ -272,7 +272,8 @@
 }
 
 /* Leaflet street map, tinted to sit inside the same night sky. */
-.leaflet-container {
+/* The map's own stylesheet loads later, with the same weight, so this needs the extra element. */
+div.leaflet-container {
   background: oklch(0.12 0.03 275);
   font-family: var(--font-sans);
 }
@@ -299,6 +300,44 @@
   border: 1px solid var(--color-border);
   color: var(--color-foreground);
   box-shadow: var(--shadow-panel);
+}
+
+/* A jammed junction sends rings outward. Transform and opacity only. */
+.pulse-ring {
+  pointer-events: none;
+}
+
+.pulse-ring span {
+  position: absolute;
+  inset: 12px;
+  border-radius: 999px;
+  border: 2px solid var(--signal-high);
+  opacity: 0;
+  animation: ring-out 2.4s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.pulse-ring span:nth-child(2) {
+  animation-delay: 1.2s;
+}
+
+@keyframes ring-out {
+  0% {
+    opacity: 0.85;
+    transform: scale(0.35);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
+
+/* A soft edge so the map sits inside its glass frame instead of ending at a hard line. */
+.map-vignette {
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 50% 45%, transparent 55%, oklch(0.1 0.04 275 / 0.55) 100%),
+    linear-gradient(180deg, oklch(0.1 0.04 275 / 0.55), transparent 22%),
+    linear-gradient(0deg, oklch(0.1 0.04 275 / 0.6), transparent 26%);
 }
 
 /* Thin scrollbars that match the glass. */
