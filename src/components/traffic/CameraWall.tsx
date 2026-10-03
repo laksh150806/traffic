@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { CameraOff, ScanLine, Video } from "lucide-react";
+import { useReducedMotion } from "motion/react";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { CameraTile, RoadState } from "@/lib/traffic-data";
 
@@ -78,7 +79,7 @@ function CameraTileView({
           <span className="truncate text-[11px] font-medium">{camera.camera_name}</span>
         </span>
         <span
-          className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+          className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold ${
             green ? "bg-signal-low/15 text-signal-low" : "bg-signal-high/15 text-signal-high"
           }`}
         >
@@ -159,7 +160,7 @@ function CameraTileView({
         )}
 
         {!offline ? (
-          <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-1.5 font-mono text-[9px] text-foreground/80">
+          <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-1.5 font-mono text-[10px] text-foreground/80">
             <div className="flex justify-between">
               <span>frame {frame}</span>
               <span>{Math.round(camera.confidence_avg * 100)}% confidence</span>
@@ -187,11 +188,14 @@ export function CameraWall({
   loading: boolean;
 }) {
   // Slow frame clock so the scenes look like a running feed between refreshes.
+  // People who asked for less motion get a still frame instead.
+  const reduceMotion = useReducedMotion() ?? false;
   const [frameTick, setFrameTick] = useState(0);
   useEffect(() => {
+    if (reduceMotion) return;
     const id = window.setInterval(() => setFrameTick((f) => f + 1), 900);
     return () => window.clearInterval(id);
-  }, []);
+  }, [reduceMotion]);
 
   const roadById = useMemo(() => new Map(roads.map((r) => [r.road_id, r])), [roads]);
 
@@ -204,8 +208,9 @@ export function CameraWall({
             Approach cameras
           </h2>
           <p className="text-xs text-muted-foreground">
-            One camera per approach — the vehicles you see are exactly the count feeding the signal
-            model for that direction.
+            One drawn view per approach. Each scene is generated from that approach&apos;s simulated
+            queue, so the vehicle count matches the model&apos;s queue (the CCTV chart adds
+            detection noise on top).
           </p>
         </div>
         <span

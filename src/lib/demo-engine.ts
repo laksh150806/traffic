@@ -6,13 +6,17 @@
  * fully alive with no database. Client-side only: nothing here touches I/O.
  */
 import { SEED_JUNCTIONS } from "@/lib/seed-junctions";
+import { fixedPlanForJunction } from "@/lib/fixed-plan";
+import { forecastJunction } from "@/lib/forecast";
 import { FIXED_GREEN, clamp, solveJunction, type ApproachInput } from "@/lib/traffic-model";
 import {
+  INCIDENT_CAPACITY_FACTOR,
   approachPressure,
   decidePhase,
-  greenSecondsHeld,
-  stepQueue,
+  effectiveGreenSeconds,
+  incidentRoadId,
   levelFor,
+  stepQueue,
   timeOfDayFactor,
   type PhaseApproach,
 } from "@/lib/sim-core";
@@ -29,6 +33,7 @@ import type {
   CongestionLevel,
   CyclePoint,
   JunctionSummary,
+  ModelledSaving,
   ModelPerformance,
   RoadState,
 } from "@/lib/traffic-types";
@@ -38,11 +43,14 @@ const NOMINAL_TICK_SEC = 12;
 const WARMUP_TICKS = 30;
 const HISTORY_ROWS_PER_JUNCTION = 80;
 const MAX_ACCURACY_SAMPLES = 1500;
+/** Window the "waiting avoided" total covers, minutes. */
+const SAVING_WINDOW_MIN = 60;
 const MAX_CCTV_ROWS = 800;
 
 type Road = {
   roadId: number;
   junctionId: number;
+  junctionIndex: number;
   direction: (typeof DIRECTIONS)[number];
   capacity: number;
   name: string;
@@ -71,7 +79,12 @@ type RoadSim = {
   model: ModelRow | null;
   greenSec: number;
   isGreen: boolean;
+  /** When the current phase state (green or red) began. */
   phaseStartMs: number;
+  /** Useful green seconds served since the last control tick. */
+  greenAccumSec: number;
+  /** Time up to which green has been accounted for. */
+  accruedAtMs: number;
 };
 
 type HistoryRow = CycleRow & { junction_id: number; road_id: number };
@@ -94,13 +107,42 @@ type World = {
   cycle: Map<number, number>;
   history: Map<number, HistoryRow[]>;
   accuracy: number[];
+  /** Errors of the naive "queue stays put" guess over the same samples. */
+  baseline: number[];
+  /** Modelled saving per control tick, network-wide, newest last. */
+  savedLog: Array<{ atMs: number; sec: number }>;
   cctv: CctvRow[];
   frames: Map<number, number>;
-  savedTotalSec: number;
   lastTickMs: number;
 };
 
 let world: World | null = null;
+
+/** Source of randomness for the simulator. Replaceable so tests can be exactly repeatable. */
+let random: () => number = Math.random;
+
+/** Small seeded generator (mulberry32). */
+function seededRandom(seed: number) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Start the simulation again from scratch. With a seed the random noise is repeatable;
+ * without one it is ordinary randomness. Mostly for tests.
+ */
+export function resetDemoEngine(seed?: number) {
+  world = null;
+  scenario.mode = "auto";
+  scenario.incidents.clear();
+  random = seed === undefined ? Math.random : seededRandom(seed);
+}
 
 const scenario = {
   mode: "auto" as ScenarioMode,
@@ -121,21 +163,23 @@ function buildWorld(nowMs: number): World {
       const road: Road = {
         roadId: jIndex * DIRECTIONS.length + dIndex + 1,
         junctionId: junction.id,
+        junctionIndex: jIndex,
         direction,
         capacity: junction.capacity,
         name: `${junction.name} - ${titleCase(direction)} Approach`,
       };
       roads.push(road);
       list.push(road);
-      const seedQueue = 20 + ((road.roadId * 13) % 55);
       sim.set(road.roadId, {
-        queueExact: seedQueue,
-        queue: seedQueue,
+        queueExact: 0,
+        queue: 0,
         recordedAtMs: nowMs,
         model: null,
         greenSec: 30,
         isGreen: direction === "NORTH",
         phaseStartMs: nowMs,
+        greenAccumSec: 0,
+        accruedAtMs: nowMs,
       });
     });
     roadsByJunction.set(junction.id, list);
@@ -148,17 +192,40 @@ function buildWorld(nowMs: number): World {
     cycle: new Map(),
     history: new Map(),
     accuracy: [],
+    baseline: [],
+    savedLog: [],
     cctv: [],
     frames: new Map(),
-    savedTotalSec: 0,
     lastTickMs: nowMs,
   };
+}
+
+/**
+ * Start every approach with the queue it would settle to at this hour, instead of an arbitrary
+ * pile, so the first screen is not a network full of leftover vehicles that take many minutes to
+ * clear.
+ */
+function seedQueues(w: World, nowMs: number) {
+  const factor = getScenarioFactor();
+  SEED_JUNCTIONS.forEach((junction, jIndex) => {
+    const expected = forecastJunction(jIndex, new Date(nowMs), {
+      ...(factor === undefined ? {} : { factor }),
+    });
+    (w.roadsByJunction.get(junction.id) ?? []).forEach((road, a) => {
+      const state = w.sim.get(road.roadId);
+      if (!state) return;
+      state.queueExact = expected.approachQueues[a] ?? 0;
+      state.queue = Math.round(state.queueExact);
+    });
+  });
 }
 
 function ensureWorld(): World {
   if (world) return world;
   const now = Date.now();
-  world = buildWorld(now - WARMUP_TICKS * NOMINAL_TICK_SEC * 1000);
+  const start = now - WARMUP_TICKS * NOMINAL_TICK_SEC * 1000;
+  world = buildWorld(start);
+  seedQueues(world, start);
   // Warm start so charts and history are populated on first paint.
   for (let i = WARMUP_TICKS; i >= 1; i -= 1) {
     const t = now - i * NOMINAL_TICK_SEC * 1000;
@@ -173,19 +240,41 @@ function ensureWorld(): World {
 // ---------------------------------------------------------------------------
 
 function demandFactor(nowMs: number) {
-  if (scenario.mode === "rush") return 1.9;
-  if (scenario.mode === "night") return 0.45;
-  return timeOfDayFactor(new Date(nowMs));
+  return getScenarioFactor() ?? timeOfDayFactor(new Date(nowMs));
 }
 
-function incidentBoost(junctionId: number, nowMs: number) {
-  const until = scenario.incidents.get(junctionId);
+/** Share of capacity the road has left: a blocked lane cuts the busiest arm of the junction. */
+function capacityFactorFor(road: Road, nowMs: number) {
+  const until = scenario.incidents.get(road.junctionId);
   if (until === undefined) return 1;
   if (until <= nowMs) {
-    scenario.incidents.delete(junctionId);
+    scenario.incidents.delete(road.junctionId);
     return 1;
   }
-  return 2.6;
+  return road.roadId === incidentRoadId(road.junctionIndex) ? INCIDENT_CAPACITY_FACTOR : 1;
+}
+
+/** Count green seconds for every approach that is currently green, up to nowMs. */
+function accrueGreen(w: World, nowMs: number) {
+  for (const state of w.sim.values()) {
+    if (nowMs <= state.accruedAtMs) continue;
+    if (state.isGreen) {
+      state.greenAccumSec += effectiveGreenSeconds(state.phaseStartMs, state.accruedAtMs, nowMs);
+    }
+    state.accruedAtMs = nowMs;
+  }
+}
+
+/** The demand multiplier a forced scenario applies, or undefined when the clock decides. */
+export function getScenarioFactor(): number | undefined {
+  if (scenario.mode === "rush") return 1.9;
+  if (scenario.mode === "night") return 0.45;
+  return undefined;
+}
+
+/** Blocked-lane junctions with the time (ms) each block clears. */
+export function getIncidentEnds(nowMs = Date.now()): Map<number, number> {
+  return new Map([...scenario.incidents.entries()].filter(([, until]) => until > nowMs));
 }
 
 export function getScenarioMode(): ScenarioMode {
@@ -194,6 +283,9 @@ export function getScenarioMode(): ScenarioMode {
 
 export function setScenarioMode(mode: ScenarioMode) {
   scenario.mode = mode;
+  // Traffic does not take half an hour to arrive when a rush hour is switched on: queues jump
+  // to what that scenario settles at, and the controller then reacts from there.
+  if (world) seedQueues(world, Date.now());
 }
 
 /** Spike demand at one junction for a while, as if a lane were blocked. */
@@ -214,6 +306,7 @@ export function getActiveIncidents(nowMs = Date.now()): number[] {
 // ---------------------------------------------------------------------------
 
 function runTick(w: World, nowMs: number) {
+  accrueGreen(w, nowMs);
   const factor = demandFactor(nowMs);
   const prevExact = new Map<number, number>();
   const prevArrival = new Map<number, number | null>();
@@ -235,7 +328,9 @@ function runTick(w: World, nowMs: number) {
     prevArrival.set(road.roadId, state.model ? state.model.arrival_rate_vph : null);
     if (state.model) hadModel.add(road.roadId);
 
-    const greenSeconds = greenSecondsHeld(state.isGreen, elapsed, state.model?.green_sec);
+    // Green actually served since the last tick, after the lost time at each phase start.
+    const greenSeconds = state.greenAccumSec;
+    state.greenAccumSec = 0;
     greenSecondsByRoad.set(road.roadId, greenSeconds);
 
     const step = stepQueue({
@@ -245,23 +340,28 @@ function runTick(w: World, nowMs: number) {
       elapsedSec: elapsed,
       priorExact: state.queueExact,
       greenSeconds,
-      demandBoost: incidentBoost(road.junctionId, nowMs),
+      capacityFactor: capacityFactorFor(road, nowMs),
+      rand: random,
     });
     measured.set(road.roadId, step.measuredArrivals);
     exacts.set(road.roadId, Number(step.exact.toFixed(2)));
     queues.set(road.roadId, step.queue);
   }
 
-  // Score the previous prediction against what was just observed.
+  // Score the previous prediction against what was just observed, and against
+  // the naive guess that nothing changes.
   for (const road of w.roads) {
     const state = w.sim.get(road.roadId);
     if (!state?.model || !hadModel.has(road.roadId)) continue;
     const actual = queues.get(road.roadId) ?? 0;
     w.accuracy.push(Math.abs(state.model.predicted_queue_next - actual));
+    w.baseline.push(Math.abs(state.model.queue_now - actual));
   }
   if (w.accuracy.length > MAX_ACCURACY_SAMPLES) {
     w.accuracy.splice(0, w.accuracy.length - MAX_ACCURACY_SAMPLES);
+    w.baseline.splice(0, w.baseline.length - MAX_ACCURACY_SAMPLES);
   }
+  let tickSaved = 0;
 
   // Solve every junction.
   for (const [junctionId, roads] of w.roadsByJunction) {
@@ -277,31 +377,23 @@ function runTick(w: World, nowMs: number) {
       previousArrivalRate: prevArrival.get(road.roadId) ?? null,
       measuredArrivals: measured.get(road.roadId) ?? null,
       maxCapacity: road.capacity,
+      capacityFactor: capacityFactorFor(road, nowMs),
     }));
 
-    const solution = solveJunction(inputs, elapsed);
+    const fixedPlan = fixedPlanForJunction(junctionId);
+    const solution = solveJunction(inputs, elapsed, fixedPlan);
     const cycleNo = (w.cycle.get(junctionId) ?? 0) + 1;
     w.cycle.set(junctionId, cycleNo);
 
-    // The approach nearest capacity gets the running green.
-    let greenNowRoad = solution.approaches[0]?.roadId ?? -1;
-    let worst = -1;
-    for (const approach of solution.approaches) {
-      if (approach.degreeSaturation > worst) {
-        worst = approach.degreeSaturation;
-        greenNowRoad = approach.roadId;
-      }
-    }
-
     const rows = w.history.get(junctionId) ?? [];
-    for (const approach of solution.approaches) {
+    for (const [approachIndex, approach] of solution.approaches.entries()) {
       const state = w.sim.get(approach.roadId);
       if (!state) continue;
 
+      // Expected discharge over the next window: the approach is green for
+      // green/cycle of the time, whichever phase the controller picks next.
       const dischargeNext =
-        approach.roadId === greenNowRoad
-          ? (approach.saturationFlowVph / 3600) * Math.min(elapsed, approach.green)
-          : 0;
+        (approach.saturationFlowVph / 3600) * elapsed * (approach.green / solution.cycleLength);
       const predictedNext = Math.max(
         0,
         Math.round(approach.queue + (approach.arrivalRateVph / 3600) * elapsed - dischargeNext),
@@ -311,7 +403,6 @@ function runTick(w: World, nowMs: number) {
       state.queue = approach.queue;
       state.recordedAtMs = nowMs;
       state.greenSec = approach.green;
-      if (!state.isGreen) state.phaseStartMs = nowMs;
       state.model = {
         arrival_rate_vph: approach.arrivalRateVph,
         saturation_flow_vph: approach.saturationFlowVph,
@@ -328,14 +419,14 @@ function runTick(w: World, nowMs: number) {
         updatedAtMs: nowMs,
       };
 
-      const saved = Math.max(0, approach.savedVehicleSeconds);
-      w.savedTotalSec += saved;
+      const saved = approach.savedVehicleSeconds;
+      tickSaved += saved;
       rows.push({
         junction_id: junctionId,
         road_id: approach.roadId,
         cycle_number: cycleNo,
         allocated_green_sec: approach.green,
-        baseline_fixed_sec: FIXED_GREEN,
+        baseline_fixed_sec: fixedPlan?.greens[approachIndex] ?? FIXED_GREEN,
         estimated_wait_saved_sec: saved,
         predicted_delay_adaptive_sec: approach.delayAdaptive,
         predicted_delay_fixed_sec: approach.delayFixed,
@@ -347,8 +438,12 @@ function runTick(w: World, nowMs: number) {
     w.history.set(junctionId, rows);
   }
 
+  w.savedLog.push({ atMs: nowMs, sec: tickSaved });
+  const cutoff = nowMs - SAVING_WINDOW_MIN * 60_000;
+  while (w.savedLog.length > 1 && (w.savedLog[0]?.atMs ?? nowMs) < cutoff) w.savedLog.shift();
+
   // CCTV as a second, noisier measurement of the same queue.
-  const picked = w.roads.filter(() => Math.random() < 0.25).slice(0, 24);
+  const picked = w.roads.filter(() => random() < 0.25).slice(0, 24);
   for (const road of picked) {
     if (isOffline(road.roadId)) continue;
     const queue = queues.get(road.roadId) ?? 20;
@@ -358,8 +453,8 @@ function runTick(w: World, nowMs: number) {
       cameraId: road.roadId,
       junctionId: road.junctionId,
       frame,
-      detected: clamp(Math.round(queue * (0.88 + Math.random() * 0.24)), 0, 200),
-      confidence: Number((0.82 + Math.random() * 0.16).toFixed(3)),
+      detected: clamp(Math.round(queue * (0.88 + random() * 0.24)), 0, 200),
+      confidence: Number((0.82 + random() * 0.16).toFixed(3)),
       atMs: nowMs,
     });
   }
@@ -378,6 +473,7 @@ function isOffline(roadId: number) {
 // ---------------------------------------------------------------------------
 
 function runAdvance(w: World, nowMs: number): number {
+  accrueGreen(w, nowMs);
   let switched = 0;
   for (const roads of w.roadsByJunction.values()) {
     const approaches: PhaseApproach[] = [];
@@ -441,6 +537,7 @@ export function demoFetchJunctions(): JunctionSummary[] {
     const avgSat =
       states.reduce((sum, s) => sum + (s.model?.degree_saturation ?? 0), 0) /
       Math.max(states.length, 1);
+    const maxQueue = states.reduce((max, s) => Math.max(max, s.queue), 0);
     return {
       junction_id: junction.id,
       name: junction.name,
@@ -449,7 +546,7 @@ export function demoFetchJunctions(): JunctionSummary[] {
       longitude: junction.lng,
       avg_vehicle_count: Number((total / Math.max(states.length, 1)).toFixed(1)),
       total_vehicle_count: total,
-      congestion_level: levelFor(avgSat),
+      congestion_level: levelFor(avgSat, maxQueue),
       last_reading_at: new Date(w.lastTickMs).toISOString(),
     };
   });
@@ -508,12 +605,22 @@ export function demoFetchJunctionModel(junctionId: number): ApproachModelState[]
 
 export function demoFetchModelPerformance(): ModelPerformance {
   const w = ensureWorld();
-  const states = w.roads.map((r) => w.sim.get(r.roadId)?.model).filter((m): m is ModelRow => !!m);
-  return computeModelPerformance(w.accuracy, states);
+  const states = w.roads.flatMap((r) => {
+    const model = w.sim.get(r.roadId)?.model;
+    return model ? [{ ...model, junction_id: r.junctionId }] : [];
+  });
+  return computeModelPerformance(w.accuracy, states, w.baseline);
 }
 
-export function demoFetchTotalSecondsSaved(): number {
-  return Math.round(ensureWorld().savedTotalSec);
+/** Modelled waiting avoided over the last hour (or since the engine started, if shorter). */
+export function demoFetchTotalSecondsSaved(): ModelledSaving {
+  const w = ensureWorld();
+  const oldest = w.savedLog[0]?.atMs ?? w.lastTickMs;
+  const spanMin = (w.lastTickMs - oldest) / 60_000 + NOMINAL_TICK_SEC / 60;
+  return {
+    seconds: Math.round(w.savedLog.reduce((sum, row) => sum + row.sec, 0)),
+    windowMin: Math.max(1, Math.round(Math.min(SAVING_WINDOW_MIN, spanMin))),
+  };
 }
 
 export function demoFetchCctvFeed(junctionId: number): CctvPoint[] {

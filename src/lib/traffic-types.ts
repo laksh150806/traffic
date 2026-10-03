@@ -34,7 +34,7 @@ export type CyclePoint = {
   saved_sec: number;
   /** Modelled average wait per vehicle under the adaptive plan (s). */
   delay_adaptive: number;
-  /** Modelled average wait per vehicle under the fixed 26s green / 120s cycle plan (s). */
+  /** Modelled average wait per vehicle under the junction's fixed-time reference plan (s). */
   delay_fixed: number;
 };
 
@@ -64,6 +64,17 @@ export type ModelPerformance = {
   networkDelayFixed: number;
   /** Approaches predicted to be over capacity (x > 1). */
   saturatedApproaches: number;
+  /** Mean absolute error of simply assuming the queue stays as it is, for comparison. */
+  baselineMeanAbsError: number;
+  /** Junctions where the adaptive plan is predicted to wait longer than the fixed timer. */
+  junctionsAdaptiveWorse: number;
+  junctionsTotal: number;
+};
+
+/** Modelled (not measured) vehicle-seconds of waiting avoided, over the stated window. */
+export type ModelledSaving = {
+  seconds: number;
+  windowMin: number;
 };
 
 export type CctvPoint = {

@@ -130,6 +130,23 @@ export function GlCanvas({
     if (failed === "unsupported") onFailRef.current?.("unsupported");
   }, [failed]);
 
+  // A lost context or a stall is often temporary (a sleeping laptop, a tab left in the
+  // background). When the tab is looked at again, try the 3D view once or twice more
+  // before settling on the fallback for good.
+  const retries = useRef(0);
+  useEffect(() => {
+    if (failed !== "context-lost" && failed !== "slow") return;
+    if (retries.current >= 2) return;
+    const retry = () => {
+      if (document.hidden) return;
+      retries.current += 1;
+      setDpr([1, 1]);
+      setFailed(null);
+    };
+    document.addEventListener("visibilitychange", retry);
+    return () => document.removeEventListener("visibilitychange", retry);
+  }, [failed]);
+
   const slow = useCallback(() => {
     if (dpr[1] > 1) setDpr([1, 1]);
     else fail("slow");

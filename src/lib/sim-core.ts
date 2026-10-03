@@ -2,8 +2,11 @@
  * Pure simulation rules shared by the live backend (traffic.functions.ts) and
  * the in-browser demo engine, so both behave identically. No I/O in here.
  */
-import { FIXED_GREEN, clamp, saturationFlow } from "@/lib/traffic-model";
+import { LOST_TIME_PER_PHASE, clamp, saturationFlow } from "@/lib/traffic-model";
 import type { CongestionLevel } from "@/lib/traffic-types";
+
+/** Every modelled junction is a four-way crossing. */
+export const APPROACHES_PER_JUNCTION = 4;
 
 /**
  * Deterministic per-road "personality": how heavily loaded this approach runs
@@ -15,30 +18,102 @@ export function loadFor(roadId: number) {
   return 0.45 + frac * 0.95;
 }
 
-/** Traffic-light colour for a junction from the mean degree of saturation of its approaches. */
-export function levelFor(avgSaturation: number): CongestionLevel {
-  if (avgSaturation >= 0.95) return "HIGH";
-  if (avgSaturation >= 0.75) return "MODERATE";
+/** Queue length (vehicles) on a single arm at which the whole junction is no longer "free flowing". */
+const QUEUE_BUSY = 40;
+const QUEUE_JAMMED = 80;
+
+/**
+ * Traffic-light colour for a junction. The mean degree of saturation of its
+ * approaches sets the base level; a long queue on any one arm raises it, so a
+ * junction with a single jammed arm is never shown as free flowing.
+ */
+export function levelFor(avgSaturation: number, maxQueue = 0): CongestionLevel {
+  if (avgSaturation >= 0.95 || maxQueue >= QUEUE_JAMMED) return "HIGH";
+  if (avgSaturation >= 0.75 || maxQueue >= QUEUE_BUSY) return "MODERATE";
   return "LOW";
 }
 
-/** Chennai (UTC+5:30) rush hour shaping of demand. */
+/**
+ * Chennai (UTC+5:30) demand shaping through the day: plateaus at the morning
+ * peak, midday, the evening peak and the evening shoulder, joined by ramps so
+ * the demand never jumps between two consecutive minutes. Not yet split by
+ * weekday; it is a synthetic curve until it is calibrated on counted data.
+ */
+const DEMAND_KNOTS: ReadonlyArray<readonly [hour: number, factor: number]> = [
+  [0, 0.45],
+  [6.5, 0.45],
+  [8, 1.75],
+  [10, 1.75],
+  [11, 1.15],
+  [16, 1.15],
+  [17.5, 1.9],
+  [19.5, 1.9],
+  [21, 0.9],
+  [22, 0.9],
+  [23.5, 0.45],
+  [24, 0.45],
+];
+
 export function timeOfDayFactor(now: Date) {
   const istHour = (now.getUTCHours() + 5.5 + now.getUTCMinutes() / 60) % 24;
-  if (istHour >= 8 && istHour < 10) return 1.75;
-  if (istHour >= 17 && istHour < 20) return 1.9;
-  if (istHour >= 10 && istHour < 17) return 1.15;
-  if (istHour >= 20 && istHour < 23) return 0.9;
+  for (let i = 1; i < DEMAND_KNOTS.length; i += 1) {
+    const [h1, f1] = DEMAND_KNOTS[i] as readonly [number, number];
+    if (istHour <= h1) {
+      const [h0, f0] = DEMAND_KNOTS[i - 1] as readonly [number, number];
+      return h1 === h0 ? f1 : f0 + ((f1 - f0) * (istHour - h0)) / (h1 - h0);
+    }
+  }
   return 0.45;
 }
 
+/** Average of the demand curve over a whole day: what a fixed timer is set up for. */
+export const MEAN_DAY_FACTOR = (() => {
+  const base = Date.UTC(2026, 0, 5, 0, 0) - 5.5 * 3600 * 1000;
+  let sum = 0;
+  const steps = 96;
+  for (let i = 0; i < steps; i += 1) sum += timeOfDayFactor(new Date(base + i * 15 * 60 * 1000));
+  return sum / steps;
+})();
+
 /**
  * Scales synthetic demand against one approach's share of junction capacity.
- * At 1.0 every approach was oversaturated at rush hour, which leaves no signal
- * plan able to help; 0.55 gives a realistic mix, with the busiest approaches
- * past capacity at peak and most of the network serviceable off-peak.
+ * It is a calibration choice, not a measurement: at 1.0 every approach was
+ * oversaturated at rush hour, which leaves no signal plan able to help, so it
+ * was lowered until the busiest approaches pass capacity at the peaks and most
+ * of the network is serviceable off-peak.
  */
 export const DEMAND_SCALE = 0.55;
+
+/** Vehicles per hour that want to enter one approach. */
+export function approachDemandVph(args: {
+  roadId: number;
+  maxCapacity: number;
+  /** Demand multiplier, see timeOfDayFactor. */
+  factor: number;
+  demandBoost?: number;
+}) {
+  const approachCapacity = saturationFlow(args.maxCapacity) / APPROACHES_PER_JUNCTION;
+  return (
+    approachCapacity *
+    DEMAND_SCALE *
+    loadFor(args.roadId) *
+    (args.factor / 1.15) *
+    (args.demandBoost ?? 1)
+  );
+}
+
+/** Share of normal capacity left on the approach where a lane is blocked. */
+export const INCIDENT_CAPACITY_FACTOR = 0.3;
+
+/** A blocked lane hits the busiest arm of the junction. Road ids go `junctionIndex*4 + approach + 1`. */
+export function incidentRoadId(junctionIndex: number) {
+  let best = junctionIndex * APPROACHES_PER_JUNCTION + 1;
+  for (let a = 1; a < APPROACHES_PER_JUNCTION; a += 1) {
+    const id = junctionIndex * APPROACHES_PER_JUNCTION + a + 1;
+    if (loadFor(id) > loadFor(best)) best = id;
+  }
+  return best;
+}
 
 export type QueueStepInput = {
   roadId: number;
@@ -51,8 +126,10 @@ export type QueueStepInput = {
   priorExact: number;
   /** Seconds of green this approach actually held inside the window. */
   greenSeconds: number;
-  /** Optional per-road demand multiplier, e.g. a simulated incident. */
+  /** Optional per-road demand multiplier. */
   demandBoost?: number;
+  /** Share of normal capacity available, e.g. while a lane is blocked. */
+  capacityFactor?: number;
   rand?: () => number;
 };
 
@@ -60,7 +137,11 @@ export type QueueStep = {
   arrivals: number;
   exact: number;
   queue: number;
-  /** Detector count for the window, with a little measurement noise. */
+  /**
+   * Detector count for the window, with a little measurement noise. It is kept
+   * fractional: rounding a 12 s count to whole vehicles loses most of a quiet
+   * road's traffic and biases the arrival-rate estimate low.
+   */
   measuredArrivals: number;
 };
 
@@ -70,30 +151,34 @@ export type QueueStep = {
  */
 export function stepQueue(input: QueueStepInput): QueueStep {
   const rand = input.rand ?? Math.random;
-  const approachCapacity = saturationFlow(input.maxCapacity) / 4;
-  const demandVph =
-    approachCapacity *
-    DEMAND_SCALE *
-    loadFor(input.roadId) *
-    (input.factor / 1.15) *
-    (input.demandBoost ?? 1);
+  const demandVph = approachDemandVph({
+    roadId: input.roadId,
+    maxCapacity: input.maxCapacity,
+    factor: input.factor,
+    ...(input.demandBoost === undefined ? {} : { demandBoost: input.demandBoost }),
+  });
   const arrivals = ((demandVph * (0.85 + rand() * 0.3)) / 3600) * input.elapsedSec;
   const served = Math.min(
     input.priorExact + arrivals,
-    (saturationFlow(input.maxCapacity) / 3600) * input.greenSeconds,
+    (saturationFlow(input.maxCapacity, input.capacityFactor) / 3600) * input.greenSeconds,
   );
   const exact = clamp(input.priorExact + arrivals - served, 0, 150);
   return {
     arrivals,
     exact,
     queue: Math.round(exact),
-    measuredArrivals: Math.max(0, Math.round(arrivals * (0.9 + rand() * 0.2))),
+    measuredArrivals: Math.max(0, arrivals * (0.9 + rand() * 0.2)),
   };
 }
 
-/** Seconds of green an approach really held in the window that just finished. */
-export function greenSecondsHeld(wasGreen: boolean, elapsedSec: number, allocatedGreen?: number) {
-  return wasGreen ? Math.min(elapsedSec, allocatedGreen ?? FIXED_GREEN) : 0;
+/**
+ * Seconds of useful green inside the window [fromMs, toMs] for a phase that
+ * turned green at `greenStartMs`: the first LOST_TIME_PER_PHASE seconds of a
+ * phase (start-up lag and the clearance of the previous one) discharge nothing.
+ */
+export function effectiveGreenSeconds(greenStartMs: number, fromMs: number, toMs: number) {
+  const usefulFrom = Math.max(fromMs, greenStartMs + LOST_TIME_PER_PHASE * 1000);
+  return Math.max(0, (toMs - usefulFrom) / 1000);
 }
 
 // ---------------------------------------------------------------------------
@@ -109,17 +194,29 @@ export const MAX_PHASE_SEC = 90;
  * that has already served its minimum. Prevents phase flapping.
  */
 export const PREEMPT_MARGIN = 0.25;
+/** No approach waits on red longer than this once the running phase has served its minimum. */
+export const MAX_RED_SEC = 120;
+/**
+ * An overdue approach takes over once the running phase has held green this long
+ * (or its whole allocation, if shorter), so a chain of overdue arms each still get
+ * a usable green instead of cutting one another off after the bare minimum.
+ */
+export const FORCED_HANDOVER_SEC = 20;
+/** Each AGING_SEC spent on red adds one unit of pressure, so waiting never goes unnoticed. */
+export const AGING_SEC = 180;
+/** A queue of this many vehicles adds one unit of pressure. */
+export const QUEUE_PRESSURE_VEH = 50;
 
-/** Pressure = how far past capacity an approach is running right now. */
+/** Pressure = how far past capacity an approach is running right now, plus its backlog. */
 export function approachPressure(model: { degreeSaturation: number; queueNow: number } | null) {
   if (!model) return 0;
-  return model.degreeSaturation + model.queueNow / 200;
+  return model.degreeSaturation + model.queueNow / QUEUE_PRESSURE_VEH;
 }
 
 export type PhaseApproach = {
   roadId: number;
   isGreen: boolean;
-  /** When the current phase state began (ms since epoch). */
+  /** When the current phase state (green or red) began, ms since epoch. */
   startedAtMs: number;
   /** Green the model currently allocates this approach, seconds. */
   allocatedGreen: number;
@@ -136,34 +233,56 @@ export type PhaseDecision = {
 /**
  * Decide, for one junction, whether the running phase ends and who gets the
  * green next. Returns null when the current phase should keep running.
+ *
+ * The next green goes to the approach with the highest pressure plus ageing
+ * (time spent on red), and any approach that has been red for MAX_RED_SEC jumps
+ * the queue, so no arm can be starved however the pressures compare.
  */
 export function decidePhase(approaches: PhaseApproach[], nowMs: number): PhaseDecision | null {
   const sorted = [...approaches].sort((a, b) => a.roadId - b.roadId);
   const current = sorted.find((row) => row.isGreen);
-  const elapsed = current ? (nowMs - current.startedAtMs) / 1000 : Infinity;
+  // A clock that stepped backwards counts as the phase having served its time.
+  const elapsed =
+    current && nowMs >= current.startedAtMs ? (nowMs - current.startedAtMs) / 1000 : Infinity;
   const allocated = current ? clamp(current.allocatedGreen, MIN_PHASE_SEC, MAX_PHASE_SEC) : 0;
 
-  // Best challenger: worst pressure among the approaches waiting on red.
   let challenger: PhaseApproach | null = null;
-  let challengerPressure = -1;
+  let challengerScore = -Infinity;
+  let challengerRed = -1;
+  let overdue: PhaseApproach | null = null;
+  let overdueRed = -1;
+
   for (const row of sorted) {
     if (current && row.roadId === current.roadId) continue;
-    if (row.pressure > challengerPressure) {
-      challengerPressure = row.pressure;
+    const redSec = Math.max(0, (nowMs - row.startedAtMs) / 1000);
+    const score = row.pressure + redSec / AGING_SEC;
+    // Ties go to whoever has waited longest, not to the lowest road id.
+    if (score > challengerScore || (score === challengerScore && redSec > challengerRed)) {
+      challengerScore = score;
+      challengerRed = redSec;
       challenger = row;
+    }
+    if (redSec >= MAX_RED_SEC && redSec > overdueRed) {
+      overdueRed = redSec;
+      overdue = row;
     }
   }
 
+  const next = overdue ?? challenger;
+  if (!next) return null;
+
   const servedGreen = elapsed >= allocated;
+  const forcedAfter = Math.max(MIN_PHASE_SEC, Math.min(allocated, FORCED_HANDOVER_SEC));
   const preempted =
-    !!current && elapsed >= MIN_PHASE_SEC && challengerPressure > current.pressure + PREEMPT_MARGIN;
+    !!current &&
+    ((overdue !== null && elapsed >= forcedAfter) ||
+      (elapsed >= MIN_PHASE_SEC && challengerScore > current.pressure + PREEMPT_MARGIN));
 
   if (current && !servedGreen && !preempted) return null;
-  if (!challenger) return null;
 
   return {
     endRoadId: current ? current.roadId : null,
-    startRoadId: challenger.roadId,
-    startGreen: Math.round(clamp(challenger.allocatedGreen, MIN_PHASE_SEC, MAX_PHASE_SEC)),
+    startRoadId: next.roadId,
+    startGreen: Math.round(clamp(next.allocatedGreen, MIN_PHASE_SEC, MAX_PHASE_SEC)),
   };
 }

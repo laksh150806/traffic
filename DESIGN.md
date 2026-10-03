@@ -13,7 +13,7 @@ queues and signal heads you cannot see on a map.
 | --- | --- | --- |
 | Void | `oklch(0.13 0.03 275)` | page background, with a saturated aurora wash for the glass to refract |
 | Deep space | `oklch(0.17 0.04 272)` | inset surfaces |
-| Glass | `oklch(0.22 0.045 275 / 0.55)` | panels, blurred 22px |
+| Glass | `oklch(0.22 0.045 275 / 0.55)` | panels, blurred 20px |
 | Aurora | `oklch(0.82 0.13 205)` | primary accent, live data |
 | Nebula | `oklch(0.68 0.19 295)` | secondary accent, glow |
 | Starlight | `oklch(0.96 0.01 270)` | text |
@@ -50,3 +50,8 @@ Mobile stacks: map first (520px tall), then Explore or Directions, then the plac
 
 All traffic readings are simulated and the UI says so ("Demo data" or "Simulated demand"). The
 signal model (Webster cycle and delay) is real; the demand feeding it is synthetic.
+
+Camera views and CCTV charts are drawn from the simulated queue and say "Simulated" on the
+panel. The comparison with the fixed timer is shown as a signed number with the count of
+junctions where the adaptive plan is predicted to do worse; a gain is never clamped to zero.
+Reduced motion is honoured globally in CSS, and charts and the camera loop check the setting too.

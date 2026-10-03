@@ -1,11 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
+  FORCED_HANDOVER_SEC,
+  INCIDENT_CAPACITY_FACTOR,
   MAX_PHASE_SEC,
+  MAX_RED_SEC,
+  MEAN_DAY_FACTOR,
   MIN_PHASE_SEC,
   PREEMPT_MARGIN,
+  approachDemandVph,
   approachPressure,
   decidePhase,
-  greenSecondsHeld,
+  effectiveGreenSeconds,
+  incidentRoadId,
+  levelFor,
   loadFor,
   stepQueue,
   timeOfDayFactor,
@@ -30,11 +37,59 @@ describe("timeOfDayFactor (IST)", () => {
   };
 
   it("peaks in the evening rush and falls at night", () => {
-    expect(timeOfDayFactor(atIst(18, 30))).toBe(1.9);
-    expect(timeOfDayFactor(atIst(9))).toBe(1.75);
-    expect(timeOfDayFactor(atIst(13))).toBe(1.15);
-    expect(timeOfDayFactor(atIst(21))).toBe(0.9);
-    expect(timeOfDayFactor(atIst(3))).toBe(0.45);
+    expect(timeOfDayFactor(atIst(18, 30))).toBeCloseTo(1.9);
+    expect(timeOfDayFactor(atIst(9))).toBeCloseTo(1.75);
+    expect(timeOfDayFactor(atIst(13))).toBeCloseTo(1.15);
+    expect(timeOfDayFactor(atIst(21, 30))).toBeCloseTo(0.9);
+    expect(timeOfDayFactor(atIst(3))).toBeCloseTo(0.45);
+  });
+
+  it("never jumps between two consecutive five-minute steps", () => {
+    let previous = timeOfDayFactor(atIst(0));
+    for (let minute = 5; minute <= 24 * 60; minute += 5) {
+      const next = timeOfDayFactor(atIst(0, minute));
+      expect(Math.abs(next - previous)).toBeLessThan(0.15);
+      previous = next;
+    }
+  });
+
+  it("wraps at midnight and averages about one over the day", () => {
+    expect(timeOfDayFactor(atIst(23, 59))).toBeCloseTo(timeOfDayFactor(atIst(0, 0)), 1);
+    expect(MEAN_DAY_FACTOR).toBeGreaterThan(0.85);
+    expect(MEAN_DAY_FACTOR).toBeLessThan(1.15);
+  });
+});
+
+describe("levelFor", () => {
+  it("colours by mean saturation at the documented boundaries", () => {
+    expect(levelFor(0.74)).toBe("LOW");
+    expect(levelFor(0.75)).toBe("MODERATE");
+    expect(levelFor(0.95)).toBe("HIGH");
+  });
+
+  it("raises a junction with one jammed arm even when the mean is low", () => {
+    expect(levelFor(0.3, 45)).toBe("MODERATE");
+    expect(levelFor(0.3, 90)).toBe("HIGH");
+    expect(levelFor(0.3, 5)).toBe("LOW");
+  });
+});
+
+describe("approachDemandVph and incidents", () => {
+  it("scales with the time-of-day factor", () => {
+    const base = { roadId: 7, maxCapacity: 120 };
+    expect(approachDemandVph({ ...base, factor: 1.9 })).toBeGreaterThan(
+      approachDemandVph({ ...base, factor: 0.45 }) * 4,
+    );
+  });
+
+  it("blocks the busiest arm of the junction", () => {
+    for (const index of [0, 10, 68]) {
+      const ids = [0, 1, 2, 3].map((a) => index * 4 + a + 1);
+      const blocked = incidentRoadId(index);
+      expect(ids).toContain(blocked);
+      expect(Math.max(...ids.map(loadFor))).toBe(loadFor(blocked));
+    }
+    expect(INCIDENT_CAPACITY_FACTOR).toBeLessThan(1);
   });
 });
 
@@ -66,6 +121,18 @@ describe("stepQueue", () => {
     );
   });
 
+  it("keeps the detector count fractional so quiet roads are not rounded away", () => {
+    const quiet = stepQueue({ ...input, factor: 0.45, greenSeconds: 0 });
+    expect(quiet.measuredArrivals).toBeGreaterThan(0);
+    expect(Number.isInteger(quiet.measuredArrivals)).toBe(false);
+  });
+
+  it("a blocked lane serves fewer vehicles for the same green", () => {
+    const open = stepQueue({ ...input, priorExact: 40, greenSeconds: 12 });
+    const blocked = stepQueue({ ...input, priorExact: 40, greenSeconds: 12, capacityFactor: 0.3 });
+    expect(blocked.exact).toBeGreaterThan(open.exact);
+  });
+
   it("a demand boost raises arrivals", () => {
     const normal = stepQueue({ ...input, greenSeconds: 0 });
     const boosted = stepQueue({ ...input, greenSeconds: 0, demandBoost: 2.6 });
@@ -73,11 +140,18 @@ describe("stepQueue", () => {
   });
 });
 
-describe("greenSecondsHeld", () => {
-  it("is zero off green and capped by the allocation on green", () => {
-    expect(greenSecondsHeld(false, 12, 30)).toBe(0);
-    expect(greenSecondsHeld(true, 12, 30)).toBe(12);
-    expect(greenSecondsHeld(true, 40, 30)).toBe(30);
+describe("effectiveGreenSeconds", () => {
+  it("loses the start-up time of a phase that began inside the window", () => {
+    expect(effectiveGreenSeconds(0, 0, 12_000)).toBe(8);
+    expect(effectiveGreenSeconds(8_000, 0, 12_000)).toBe(0);
+  });
+
+  it("counts the whole window for a phase that has been running a while", () => {
+    expect(effectiveGreenSeconds(-60_000, 0, 12_000)).toBe(12);
+  });
+
+  it("is never negative", () => {
+    expect(effectiveGreenSeconds(50_000, 0, 12_000)).toBe(0);
   });
 });
 
@@ -141,6 +215,67 @@ describe("decidePhase", () => {
     expect(decision).toEqual({ endRoadId: null, startRoadId: 2, startGreen: 30 });
   });
 
+  it("breaks ties by the longest wait, not the lowest road id", () => {
+    const decision = decidePhase(
+      [
+        row(1, { isGreen: true, startedAtMs: NOW - 31_000 }),
+        row(2, { pressure: 0.5, startedAtMs: NOW - 10_000 }),
+        row(3, { pressure: 0.5, startedAtMs: NOW - 50_000 }),
+      ],
+      NOW,
+    );
+    expect(decision?.startRoadId).toBe(3);
+  });
+
+  it("lets waiting time outweigh a small pressure advantage", () => {
+    const decision = decidePhase(
+      [
+        row(1, { isGreen: true, startedAtMs: NOW - 31_000 }),
+        row(2, { pressure: 0.7, startedAtMs: NOW - 5_000 }),
+        row(3, { pressure: 0.4, startedAtMs: NOW - 100_000 }),
+      ],
+      NOW,
+    );
+    expect(decision?.startRoadId).toBe(3);
+  });
+
+  it("serves an approach that has been red for too long, whatever the pressures say", () => {
+    const decision = decidePhase(
+      [
+        row(1, { isGreen: true, startedAtMs: NOW - (FORCED_HANDOVER_SEC + 1) * 1000, pressure: 3 }),
+        row(2, { pressure: 2.9, startedAtMs: NOW - 10_000 }),
+        row(3, { pressure: 0.01, startedAtMs: NOW - (MAX_RED_SEC + 5) * 1000 }),
+      ],
+      NOW,
+    );
+    expect(decision).toMatchObject({ endRoadId: 1, startRoadId: 3 });
+  });
+
+  it("lets the running phase serve a usable green before an overdue arm takes over", () => {
+    const overdue = row(2, { pressure: 0.01, startedAtMs: NOW - (MAX_RED_SEC + 5) * 1000 });
+    const early = decidePhase(
+      [row(1, { isGreen: true, startedAtMs: NOW - 12_000, pressure: 3 }), overdue],
+      NOW,
+    );
+    expect(early).toBeNull();
+    const later = decidePhase(
+      [
+        row(1, { isGreen: true, startedAtMs: NOW - (FORCED_HANDOVER_SEC + 1) * 1000, pressure: 3 }),
+        overdue,
+      ],
+      NOW,
+    );
+    expect(later).toMatchObject({ endRoadId: 1, startRoadId: 2 });
+  });
+
+  it("does not freeze when the clock steps backwards", () => {
+    const decision = decidePhase(
+      [row(1, { isGreen: true, startedAtMs: NOW + 600_000 }), row(2, { pressure: 0.9 })],
+      NOW,
+    );
+    expect(decision?.startRoadId).toBe(2);
+  });
+
   it("clamps the next green into the allowed range", () => {
     const long = decidePhase([row(1, { allocatedGreen: 500 })], NOW);
     const short = decidePhase([row(1, { allocatedGreen: 1 })], NOW);
@@ -152,6 +287,6 @@ describe("decidePhase", () => {
 describe("approachPressure", () => {
   it("is zero without a model and adds queue weight otherwise", () => {
     expect(approachPressure(null)).toBe(0);
-    expect(approachPressure({ degreeSaturation: 0.8, queueNow: 20 })).toBeCloseTo(0.9);
+    expect(approachPressure({ degreeSaturation: 0.8, queueNow: 20 })).toBeCloseTo(1.2);
   });
 });

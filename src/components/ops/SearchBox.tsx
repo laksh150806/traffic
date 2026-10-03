@@ -1,11 +1,18 @@
-import { useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { MapPin, Search, X } from "lucide-react";
+import { searchJunctions } from "@/lib/search";
 import type { JunctionSummary } from "@/lib/traffic-types";
 
 const DOT: Record<string, string> = {
   LOW: "bg-signal-low",
   MODERATE: "bg-signal-moderate",
   HIGH: "bg-signal-high",
+};
+
+const LEVEL_WORD: Record<string, string> = {
+  LOW: "free flowing",
+  MODERATE: "busy",
+  HIGH: "jammed",
 };
 
 type Props = {
@@ -19,27 +26,6 @@ type Props = {
   icon?: "search" | "pin";
   tint?: string;
 };
-
-/** Match on the start of any word first, then anywhere in the name or zone. */
-export function searchJunctions(junctions: JunctionSummary[], query: string, limit = 8) {
-  const q = query.trim().toLowerCase();
-  if (!q) return [];
-  const scored: Array<{ j: JunctionSummary; score: number }> = [];
-  for (const j of junctions) {
-    const name = j.name.toLowerCase();
-    const zone = j.zone.toLowerCase();
-    let score = 0;
-    if (name.startsWith(q)) score = 4;
-    else if (name.split(/\s+/).some((word) => word.startsWith(q))) score = 3;
-    else if (name.includes(q)) score = 2;
-    else if (zone.includes(q)) score = 1;
-    if (score > 0) scored.push({ j, score });
-  }
-  return scored
-    .sort((a, b) => b.score - a.score || a.j.name.localeCompare(b.j.name))
-    .slice(0, limit)
-    .map((s) => s.j);
-}
 
 export function SearchBox({
   junctions,
@@ -55,15 +41,18 @@ export function SearchBox({
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
-  const input = useRef<HTMLInputElement>(null);
+  const closeTimer = useRef<number | undefined>(undefined);
   const results = useMemo(() => searchJunctions(junctions, query), [junctions, query]);
   const Icon = icon === "pin" ? MapPin : Search;
+  const listOpen = open && results.length > 0;
+  const optionId = (index: number) => `${id}-option-${index}`;
+
+  useEffect(() => () => window.clearTimeout(closeTimer.current), []);
 
   const choose = (junction: JunctionSummary) => {
     onPick(junction);
     setQuery("");
     setOpen(false);
-    input.current?.blur();
   };
 
   const onKey = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -91,11 +80,11 @@ export function SearchBox({
       <div className="glass-chip flex items-center gap-2 !rounded-xl px-3">
         <Icon className="h-4 w-4 shrink-0" style={tint ? { color: tint } : undefined} aria-hidden />
         <input
-          ref={input}
           role="combobox"
           aria-label={label}
-          aria-expanded={open && results.length > 0}
-          aria-controls={`${id}-list`}
+          aria-expanded={listOpen}
+          aria-controls={listOpen ? `${id}-list` : undefined}
+          aria-activedescendant={listOpen ? optionId(active) : undefined}
           aria-autocomplete="list"
           value={open || !value ? query : value}
           placeholder={placeholder}
@@ -104,10 +93,16 @@ export function SearchBox({
             setActive(0);
             setOpen(true);
           }}
-          onFocus={() => setOpen(true)}
-          onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+          onFocus={() => {
+            window.clearTimeout(closeTimer.current);
+            setOpen(true);
+          }}
+          onBlur={() => {
+            window.clearTimeout(closeTimer.current);
+            closeTimer.current = window.setTimeout(() => setOpen(false), 120);
+          }}
           onKeyDown={onKey}
-          className="h-10 min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/70"
+          className="h-10 min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
         />
         {(value || query) && onClear ? (
           <button
@@ -117,48 +112,61 @@ export function SearchBox({
               setQuery("");
               onClear();
             }}
-            className="rounded-full p-1 text-muted-foreground hover:text-foreground"
+            className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
           >
-            <X className="h-3.5 w-3.5" />
+            <X className="h-3.5 w-3.5" aria-hidden />
           </button>
         ) : null}
       </div>
 
-      {open && query.trim() ? (
+      {/* Announce the outcome of a search to people who cannot see the list. */}
+      <p role="status" className="sr-only">
+        {open && query.trim()
+          ? results.length === 0
+            ? `No junction matches ${query}`
+            : `${results.length} ${results.length === 1 ? "junction" : "junctions"} found`
+          : ""}
+      </p>
+
+      {open && query.trim() && results.length === 0 ? (
+        <p className="panel absolute inset-x-0 top-full z-[900] mt-1.5 !rounded-xl px-3 py-2.5 text-xs text-muted-foreground">
+          No junction matches &quot;{query}&quot;.
+        </p>
+      ) : null}
+
+      {listOpen ? (
         <ul
           id={`${id}-list`}
           role="listbox"
+          aria-label={`${label} results`}
           className="panel absolute inset-x-0 top-full z-[900] mt-1.5 max-h-72 overflow-y-auto !rounded-xl p-1"
         >
-          {results.length === 0 ? (
-            <li className="px-3 py-2.5 text-xs text-muted-foreground">
-              No junction matches "{query}".
+          {results.map((junction, index) => (
+            <li
+              key={junction.junction_id}
+              id={optionId(index)}
+              role="option"
+              aria-selected={index === active}
+              // Keep focus in the input so the arrow keys keep working while the pointer picks.
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => choose(junction)}
+              onMouseEnter={() => setActive(index)}
+              className={`flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-sm ${
+                index === active ? "bg-white/10" : ""
+              }`}
+            >
+              <span
+                className={`h-2 w-2 shrink-0 rounded-full ${DOT[junction.congestion_level]}`}
+                aria-hidden
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium">{junction.name}</span>
+                <span className="block text-xs text-muted-foreground">
+                  {junction.zone} zone, {LEVEL_WORD[junction.congestion_level]}
+                </span>
+              </span>
             </li>
-          ) : (
-            results.map((junction, index) => (
-              <li key={junction.junction_id} role="option" aria-selected={index === active}>
-                <button
-                  type="button"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => choose(junction)}
-                  onMouseEnter={() => setActive(index)}
-                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm ${
-                    index === active ? "bg-white/10" : ""
-                  }`}
-                >
-                  <span
-                    className={`h-2 w-2 shrink-0 rounded-full ${DOT[junction.congestion_level]}`}
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium">{junction.name}</span>
-                    <span className="block text-xs text-muted-foreground">
-                      {junction.zone} zone
-                    </span>
-                  </span>
-                </button>
-              </li>
-            ))
-          )}
+          ))}
         </ul>
       ) : null}
     </div>

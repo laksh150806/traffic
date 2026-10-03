@@ -1,7 +1,9 @@
 /**
  * Turning a drive from A to B into "how long will the signals cost me".
  * Road geometry and base driving time come from OSRM's public demo server (no key);
- * the signal delay at each junction the route crosses comes from the traffic model.
+ * the signal delay at each modelled junction the route passes comes from the traffic
+ * model, priced for the time the vehicle is expected to reach it. OSRM's own driving
+ * time already includes a small allowance per signal, so a little is counted twice.
  * Pure helpers here, so the maths can be tested without a network.
  */
 import type { JunctionForecast } from "@/lib/forecast";
@@ -25,6 +27,8 @@ export type RouteJunction = {
 };
 
 export type RouteAssessment = {
+  /** Stable identity of the road geometry, so a selection survives re-ranking. */
+  id: string;
   route: OsrmRoute;
   /** True when this is a straight-line estimate because routing was unreachable. */
   estimate: boolean;
@@ -113,11 +117,30 @@ export function junctionsAlongRoute(
 
 const LEVEL_RANK = { LOW: 0, MODERATE: 1, HIGH: 2 } as const;
 
+/** Identity of a route from its shape, independent of where it ranks. */
+export function routeId(route: OsrmRoute) {
+  const first = route.coordinates[0] ?? [0, 0];
+  const last = route.coordinates[route.coordinates.length - 1] ?? [0, 0];
+  return [
+    Math.round(route.distanceM),
+    route.coordinates.length,
+    first[0].toFixed(5),
+    first[1].toFixed(5),
+    last[0].toFixed(5),
+    last[1].toFixed(5),
+  ].join("|");
+}
+
+/** Forecast for one junction, either a fixed snapshot or priced for the arrival time. */
+export type ForecastSource =
+  | ReadonlyMap<number, JunctionForecast>
+  | ((junctionId: number, secondsIntoTrip: number) => JunctionForecast | undefined);
+
 /** Adds the signal delay of every junction on the route to the base driving time. */
 export function assessRoute(
   route: OsrmRoute,
   onRoute: RouteJunction[],
-  forecast: ReadonlyMap<number, JunctionForecast>,
+  forecast: ForecastSource,
   estimate = false,
 ): RouteAssessment {
   let adaptive = 0;
@@ -126,7 +149,12 @@ export function assessRoute(
   let worstScore = -1;
 
   for (const stop of onRoute) {
-    const f = forecast.get(stop.junctionId);
+    // Time into the trip at which the vehicle reaches this junction, from the base drive time.
+    const secondsIn = route.distanceM > 0 ? (stop.alongM / route.distanceM) * route.durationSec : 0;
+    const f =
+      typeof forecast === "function"
+        ? forecast(stop.junctionId, secondsIn)
+        : forecast.get(stop.junctionId);
     if (!f) continue;
     adaptive += f.delayAdaptive;
     fixed += f.delayFixed;
@@ -138,6 +166,7 @@ export function assessRoute(
   }
 
   return {
+    id: routeId(route),
     route,
     estimate,
     junctions: onRoute,
@@ -171,6 +200,18 @@ type OsrmResponse = {
 };
 
 const OSRM = "https://router.project-osrm.org/route/v1/driving";
+const OSRM_TIMEOUT_MS = 8000;
+
+/** Why a route could not be fetched, so the UI can say the right thing. */
+export class RoutingError extends Error {
+  readonly kind: "no-route" | "busy" | "unreachable";
+
+  constructor(kind: "no-route" | "busy" | "unreachable", message: string) {
+    super(message);
+    this.name = "RoutingError";
+    this.kind = kind;
+  }
+}
 
 export async function fetchOsrmRoutes(
   from: LngLat,
@@ -179,10 +220,36 @@ export async function fetchOsrmRoutes(
   fetcher: typeof fetch = fetch,
 ): Promise<OsrmRoute[]> {
   const url = `${OSRM}/${from[0]},${from[1]};${to[0]},${to[1]}?alternatives=true&overview=full&geometries=geojson`;
-  const response = await fetcher(url, signal ? { signal } : undefined);
-  if (!response.ok) throw new Error(`Routing service answered ${response.status}`);
+
+  // Give up after a while rather than leave "Finding roads" on screen for ever.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), OSRM_TIMEOUT_MS);
+  const relay = () => controller.abort();
+  signal?.addEventListener("abort", relay);
+  let response: Response;
+  try {
+    response = await fetcher(url, { signal: controller.signal });
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    throw new RoutingError(
+      "unreachable",
+      controller.signal.aborted ? "The routing service took too long to answer" : "Network error",
+    );
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", relay);
+  }
+
+  if (!response.ok) {
+    throw new RoutingError(
+      response.status === 429 ? "busy" : "unreachable",
+      `Routing service answered ${response.status}`,
+    );
+  }
   const body = (await response.json()) as OsrmResponse;
-  if (body.code !== "Ok" || !body.routes?.length) throw new Error(`No route found (${body.code})`);
+  if (body.code !== "Ok" || !body.routes?.length) {
+    throw new RoutingError("no-route", `No route found (${body.code})`);
+  }
   return body.routes.map((r) => ({
     coordinates: r.geometry.coordinates,
     distanceM: r.distance,
@@ -191,6 +258,7 @@ export async function fetchOsrmRoutes(
 }
 
 export function formatMinutes(seconds: number) {
+  if (seconds < 60) return `${Math.max(0, Math.round(seconds))} s`;
   const minutes = Math.max(1, Math.round(seconds / 60));
   if (minutes < 60) return `${minutes} min`;
   return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")} min`;

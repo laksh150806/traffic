@@ -74,18 +74,23 @@ SELECT j.junction_id,
        j.name || ' - ' || initcap(lower(d.direction)) || ' Approach',
        CASE WHEN j.zone IN ('Central','North') THEN 140 WHEN j.zone = 'Outer' THEN 100 ELSE 120 END
 FROM public.junctions j
-CROSS JOIN (VALUES ('NORTH'),('SOUTH'),('EAST'),('WEST')) AS d(direction)
-WHERE NOT EXISTS (SELECT 1 FROM public.roads r WHERE r.junction_id = j.junction_id);
+CROSS JOIN (VALUES ('NORTH', 1), ('SOUTH', 2), ('EAST', 3), ('WEST', 4)) AS d(direction, ord)
+WHERE NOT EXISTS (SELECT 1 FROM public.roads r WHERE r.junction_id = j.junction_id)
+-- Road ids are issued in output order, and the app relies on this order
+-- (road = junction index * 4 + approach + 1, approaches N, S, E, W).
+ORDER BY j.junction_id, d.ord;
 
 INSERT INTO public.cctv_cameras (road_id, camera_name)
 SELECT r.road_id, 'CAM-' || lpad(r.road_id::text, 3, '0') || ' ' || r.direction
 FROM public.roads r
-WHERE NOT EXISTS (SELECT 1 FROM public.cctv_cameras c WHERE c.road_id = r.road_id);
+WHERE NOT EXISTS (SELECT 1 FROM public.cctv_cameras c WHERE c.road_id = r.road_id)
+ORDER BY r.road_id;
 
 INSERT INTO public.signal_timings (junction_id, road_id, timing_mode, green_duration_sec, is_currently_green)
 SELECT r.junction_id, r.road_id, 'ADAPTIVE', 30, r.direction = 'NORTH'
 FROM public.roads r
-WHERE NOT EXISTS (SELECT 1 FROM public.signal_timings t WHERE t.road_id = r.road_id);
+WHERE NOT EXISTS (SELECT 1 FROM public.signal_timings t WHERE t.road_id = r.road_id)
+ORDER BY r.road_id;
 
 INSERT INTO public.vehicle_counts (road_id, vehicle_count, source)
 SELECT r.road_id, 20 + (abs(hashtext(r.road_id::text || r.direction)) % 55), 'SIMULATED_SENSOR'

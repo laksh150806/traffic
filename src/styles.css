@@ -73,7 +73,7 @@
   --secondary-foreground: oklch(0.93 0.01 270);
   --nebula: oklch(0.68 0.19 295);
   --muted: oklch(0.3 0.04 275 / 0.6);
-  --muted-foreground: oklch(0.72 0.03 268);
+  --muted-foreground: oklch(0.8 0.03 268);
   --accent: oklch(0.32 0.06 280 / 0.6);
   --accent-foreground: oklch(0.96 0.01 270);
   --destructive: oklch(0.68 0.22 22);
@@ -83,7 +83,7 @@
   --ring: oklch(0.82 0.13 205);
   --signal-low: oklch(0.8 0.2 150);
   --signal-moderate: oklch(0.83 0.16 80);
-  --signal-high: oklch(0.68 0.22 22);
+  --signal-high: oklch(0.74 0.19 22);
   --baseline: oklch(0.62 0.05 270);
 }
 
@@ -258,6 +258,16 @@
 @media (prefers-reduced-motion: reduce) {
   .signal-live {
     animation: none;
+  }
+
+  /* Everything else that moves on its own: spinners, fades, slides. */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 

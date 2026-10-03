@@ -63,7 +63,6 @@ export function ScenarioPanel({
           <button
             key={id}
             type="button"
-            title={hint}
             aria-pressed={mode === id}
             onClick={() => choose(id)}
             className={`transition-data flex flex-col items-center gap-1 rounded-xl px-2 py-2 text-xs font-medium ${
@@ -72,8 +71,9 @@ export function ScenarioPanel({
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            <Icon className="h-4 w-4" />
+            <Icon className="h-4 w-4" aria-hidden />
             {label}
+            <span className="text-[11px] font-normal text-muted-foreground">{hint}</span>
           </button>
         ))}
       </div>
@@ -108,6 +108,10 @@ export function ScenarioPanel({
           </button>
         ) : null}
       </div>
+      <p className="mt-2 text-[11px] text-muted-foreground">
+        A blocked lane removes most of the capacity of the busiest approach for a few minutes. The
+        effect is small overnight, when that approach has little traffic to hold up.
+      </p>
     </section>
   );
 }

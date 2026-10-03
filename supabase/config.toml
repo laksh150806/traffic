@@ -1,1 +1,2 @@
-project_id = "fguiefmzbpqnpvrmmckj"
+# Local-development name only. `supabase link` records the real project when you connect one.
+project_id = "smart-traffic-management"

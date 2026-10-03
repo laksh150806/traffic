@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ArrowRightFromLine, ArrowRightToLine, Radio } from "lucide-react";
-import { formatIstTime, istHourOf, type JunctionForecast } from "@/lib/forecast";
+import { formatIstTime, istDate, istHourOf, type JunctionForecast } from "@/lib/forecast";
 import type { JunctionSummary, RoadState } from "@/lib/traffic-types";
 
 const LEVEL_STYLE: Record<string, string> = {
@@ -20,6 +20,8 @@ const BAR: Record<string, string> = {
 };
 
 type DayPoint = { hour: number; saturation: number; level: string };
+
+const hourLabel = (hour: number) => formatIstTime(istDate(hour));
 
 function useSecond() {
   const [now, setNow] = useState(() => Date.now());
@@ -54,6 +56,7 @@ export function PlaceCard({
   profile,
   at,
   isForecast,
+  fromLiveModel,
   roads,
   onDirectionsFrom,
   onDirectionsTo,
@@ -63,11 +66,14 @@ export function PlaceCard({
   profile: DayPoint[];
   at: Date;
   isForecast: boolean;
+  /** True when the figures come from the running model rather than the steady-state forecast. */
+  fromLiveModel: boolean;
   roads: RoadState[];
   onDirectionsFrom: () => void;
   onDirectionsTo: () => void;
 }) {
   const hour = Math.floor(istHourOf(at));
+  // Signed: negative means the adaptive plan is predicted to wait longer than the timer here.
   const saved =
     forecast.delayFixed > 0
       ? Math.round(((forecast.delayFixed - forecast.delayAdaptive) / forecast.delayFixed) * 100)
@@ -93,7 +99,8 @@ export function PlaceCard({
 
       {isForecast ? (
         <p className="mt-2 text-xs text-primary">
-          Forecast for {formatIstTime(at)}, from the traffic model
+          Forecast for {formatIstTime(at)}, from the traffic model. The panels below the map card
+          still show the present.
         </p>
       ) : (
         <SignalNow roads={roads} />
@@ -101,45 +108,46 @@ export function PlaceCard({
 
       <dl className="mt-3 grid grid-cols-2 gap-2">
         <div className="glass-inset p-2.5">
-          <dt className="meta-label">Wait per vehicle, adaptive</dt>
+          <dt className="meta-label">Wait per vehicle, adaptive{fromLiveModel ? ", now" : ""}</dt>
           <dd className="numeric text-xl text-primary">{Math.round(forecast.delayAdaptive)} s</dd>
         </div>
         <div className="glass-inset p-2.5">
-          <dt className="meta-label">Wait per vehicle, fixed timer</dt>
+          <dt className="meta-label">
+            Wait per vehicle, fixed timer{fromLiveModel ? ", now" : ""}
+          </dt>
           <dd className="numeric text-xl">{Math.round(forecast.delayFixed)} s</dd>
         </div>
       </dl>
       <p className="mt-2 text-xs text-muted-foreground">
         {forecast.overCapacity
           ? "Demand is above what this junction can serve, so queues keep growing whatever the timing."
-          : saved > 0
+          : saved >= 3
             ? `Adaptive timing cuts the wait by about ${saved}% here.`
-            : "At this hour the fixed timer is about as good as adaptive."}
+            : saved <= -3
+              ? `At this hour the fixed timer is predicted to wait about ${-saved}% less than adaptive here.`
+              : "At this hour the fixed timer is about as good as adaptive."}
       </p>
 
       <div className="mt-4">
         <div className="flex items-baseline justify-between">
           <p className="meta-label">A typical day</p>
-          <p className="text-xs text-muted-foreground">
-            Busiest around{" "}
-            {formatIstTime(new Date(Date.UTC(2026, 0, 5, peak.hour) - 5.5 * 3600_000))}
-          </p>
+          <p className="text-xs text-muted-foreground">Busiest around {hourLabel(peak.hour)}</p>
         </div>
         <div
           className="mt-2 flex h-14 items-end gap-[3px]"
           role="img"
-          aria-label="Congestion by hour of the day"
+          aria-label={`Congestion by hour of the day, busiest around ${hourLabel(peak.hour)}`}
         >
           {profile.map((p) => (
             <span
               key={p.hour}
-              title={`${p.hour}:00`}
+              title={`${hourLabel(p.hour)}: ${LEVEL_LABEL[p.level]?.toLowerCase() ?? p.level}`}
               className={`flex-1 rounded-sm ${BAR[p.level]} ${p.hour === hour ? "opacity-100 ring-1 ring-white" : "opacity-55"}`}
               style={{ height: `${Math.max(8, Math.min(100, p.saturation * 75))}%` }}
             />
           ))}
         </div>
-        <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+        <div className="mt-1 flex justify-between text-[11px] text-muted-foreground">
           <span>12 am</span>
           <span>6 am</span>
           <span>12 pm</span>

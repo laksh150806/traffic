@@ -1,5 +1,5 @@
 import "leaflet/dist/leaflet.css";
-import { useEffect, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import {
   CircleMarker,
   MapContainer,
@@ -10,6 +10,7 @@ import {
   useMapEvents,
 } from "react-leaflet";
 import L from "leaflet";
+import { Minus, Plus } from "lucide-react";
 import type { RouteAssessment } from "@/lib/routing";
 import type { JunctionSummary } from "@/lib/traffic-types";
 
@@ -33,11 +34,17 @@ type Props = {
   routeIndex: number;
   from: Endpoint | null;
   to: Endpoint | null;
-  /** When set, the next click on empty map picks that endpoint. */
+  /** When set, the next click on the map picks that endpoint. */
   pick: "from" | "to" | null;
   onPick: (which: "from" | "to", point: { lat: number; lng: number }) => void;
   onChooseRoute: (index: number) => void;
 };
+
+const prefersReducedMotion = () =>
+  typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const isTouchOnly = () =>
+  typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
 
 /** Frame the whole network once, then follow the selection and any route. */
 function Camera({
@@ -51,6 +58,15 @@ function Camera({
   const lastSelected = useRef<number | null>(null);
 
   useEffect(() => {
+    const container = map.getContainer();
+    container.setAttribute("role", "region");
+    container.setAttribute(
+      "aria-label",
+      "Map of Chennai junctions. Use the search box or the junction list to pick one.",
+    );
+  }, [map]);
+
+  useEffect(() => {
     if (framed.current || junctions.length === 0) return;
     framed.current = true;
     map.fitBounds(L.latLngBounds(junctions.map((j) => [j.latitude, j.longitude])), {
@@ -58,13 +74,14 @@ function Camera({
     });
   }, [junctions, map]);
 
-  const routeKey = routes.map((r) => r.route.distanceM.toFixed(0)).join("|");
+  // The set of roads, regardless of the order they are ranked in, decides when to refit.
+  const routeKey = [...routes.map((r) => r.id)].sort().join("#");
   useEffect(() => {
     const chosen = routes[routeIndex] ?? routes[0];
     if (!chosen || chosen.route.coordinates.length < 2) return;
     map.fitBounds(
       L.latLngBounds(chosen.route.coordinates.map(([lng, lat]) => [lat, lng] as [number, number])),
-      { padding: [72, 72], maxZoom: 15 },
+      { padding: [72, 72], maxZoom: 15, animate: !prefersReducedMotion() },
     );
     // Only refit when the set of routes changes, not when the user flips between them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -75,7 +92,9 @@ function Camera({
     lastSelected.current = selectedId;
     const j = junctions.find((item) => item.junction_id === selectedId);
     if (!j || routes.length > 0) return;
-    map.flyTo([j.latitude, j.longitude], Math.max(map.getZoom(), 13), { duration: 0.8 });
+    const zoom = Math.max(map.getZoom(), 13);
+    if (prefersReducedMotion()) map.setView([j.latitude, j.longitude], zoom, { animate: false });
+    else map.flyTo([j.latitude, j.longitude], zoom, { duration: 0.8 });
   }, [selectedId, junctions, routes.length, map]);
 
   return null;
@@ -97,6 +116,108 @@ function ClickToPick({ pick, onPick }: Pick<Props, "pick" | "onPick">) {
   return null;
 }
 
+/** Zoom buttons that work with a keyboard and a touch screen, not only the scroll wheel. */
+function ZoomButtons() {
+  const map = useMap();
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // A click on a button must not also be a click on the map beneath it (it would drop a pin).
+    if (box.current) {
+      L.DomEvent.disableClickPropagation(box.current);
+      L.DomEvent.disableScrollPropagation(box.current);
+    }
+  }, []);
+  return (
+    <div
+      ref={box}
+      className="absolute right-3 top-1/2 z-[1000] flex -translate-y-1/2 flex-col gap-1.5"
+    >
+      <button
+        type="button"
+        aria-label="Zoom in"
+        onClick={() => map.zoomIn()}
+        className="glass-chip flex h-11 w-11 items-center justify-center"
+      >
+        <Plus className="h-4 w-4" />
+      </button>
+      <button
+        type="button"
+        aria-label="Zoom out"
+        onClick={() => map.zoomOut()}
+        className="glass-chip flex h-11 w-11 items-center justify-center"
+      >
+        <Minus className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
+type MarkerProps = {
+  id: number;
+  lat: number;
+  lng: number;
+  name: string;
+  zone: string;
+  level: string;
+  avg: number;
+  selected: boolean;
+  crossed: boolean;
+  dim: number;
+  onSelect: (id: number) => void;
+};
+
+/**
+ * One junction. Memoised with stable props so a refresh that changes nothing for this
+ * junction does not touch its Leaflet layer (there are 69 of them).
+ */
+const JunctionMarker = memo(function JunctionMarker({
+  id,
+  lat,
+  lng,
+  name,
+  zone,
+  level,
+  avg,
+  selected,
+  crossed,
+  dim,
+  onSelect,
+}: MarkerProps) {
+  const color = LEVEL_COLOR[level] ?? "#4ade80";
+  const base = 5 + Math.min(1, avg / 70) * 4;
+  const center = useMemo<[number, number]>(() => [lat, lng], [lat, lng]);
+  const pathOptions = useMemo(
+    () => ({
+      color: selected || crossed ? "#ffffff" : color,
+      fillColor: color,
+      fillOpacity: 0.85 * dim,
+      opacity: dim,
+      weight: selected ? 3 : crossed ? 2.5 : 1.5,
+      // A click on a junction must not also count as a click on the map underneath.
+      bubblingMouseEvents: false,
+    }),
+    [color, selected, crossed, dim],
+  );
+  const handlers = useMemo(() => ({ click: () => onSelect(id) }), [id, onSelect]);
+
+  return (
+    <CircleMarker
+      center={center}
+      radius={selected ? base + 4 : crossed ? base + 2 : base}
+      pathOptions={pathOptions}
+      eventHandlers={handlers}
+    >
+      <Tooltip direction="top" offset={[0, -8]} opacity={1}>
+        <span className="font-medium">{name}</span>
+        <br />
+        {zone}, {level.toLowerCase()}, avg {avg} vehicles
+      </Tooltip>
+    </CircleMarker>
+  );
+});
+
+const ROUTE_CASING = { color: "#0b1030", weight: 10, opacity: 0.9, bubblingMouseEvents: false };
+
 export default function OpsMap({
   junctions,
   selectedId,
@@ -110,7 +231,16 @@ export default function OpsMap({
   onChooseRoute,
 }: Props) {
   const active = routes[routeIndex] ?? null;
-  const onRoute = new Set(active?.junctions.map((j) => j.junctionId));
+  const onRoute = useMemo(() => new Set(active?.junctions.map((j) => j.junctionId)), [active]);
+
+  // Keep the handler the markers see stable even though the parent recreates it each render.
+  const selectRef = useRef(onSelect);
+  useEffect(() => {
+    selectRef.current = onSelect;
+  }, [onSelect]);
+  const handleSelect = useCallback((id: number) => selectRef.current(id), []);
+
+  const touchOnly = useMemo(isTouchOnly, []);
 
   return (
     <MapContainer
@@ -119,12 +249,14 @@ export default function OpsMap({
       minZoom={9}
       preferCanvas
       scrollWheelZoom
+      // On a phone a one-finger drag should scroll the page; two fingers move the map.
+      dragging={!touchOnly}
       className="h-full w-full"
       zoomControl={false}
     >
       <TileLayer
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        attribution="&copy; OpenStreetMap contributors"
+        url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors'
         maxZoom={19}
       />
       <Camera
@@ -134,14 +266,15 @@ export default function OpsMap({
         routeIndex={routeIndex}
       />
       <ClickToPick pick={pick} onPick={onPick} />
+      <ZoomButtons />
 
       {/* Alternatives first so the chosen route draws on top. */}
       {routes.map((assessment, index) =>
         index === routeIndex ? null : (
           <Polyline
-            key={`alt-${index}`}
+            key={`alt-${assessment.id}`}
             positions={assessment.route.coordinates.map(([lng, lat]) => [lat, lng])}
-            pathOptions={{ color: ALT_COLOR, weight: 5, opacity: 0.7 }}
+            pathOptions={{ color: ALT_COLOR, weight: 5, opacity: 0.7, bubblingMouseEvents: false }}
             eventHandlers={{ click: () => onChooseRoute(index) }}
           />
         ),
@@ -150,7 +283,8 @@ export default function OpsMap({
         <>
           <Polyline
             positions={active.route.coordinates.map(([lng, lat]) => [lat, lng])}
-            pathOptions={{ color: "#0b1030", weight: 10, opacity: 0.9 }}
+            pathOptions={ROUTE_CASING}
+            interactive={false}
           />
           <Polyline
             positions={active.route.coordinates.map(([lng, lat]) => [lat, lng])}
@@ -158,39 +292,32 @@ export default function OpsMap({
               color: ROUTE_COLOR,
               weight: 6,
               opacity: 1,
-              dashArray: active.estimate ? "2 10" : undefined,
+              ...(active.estimate ? { dashArray: "2 10" } : {}),
+              bubblingMouseEvents: false,
             }}
+            interactive={false}
           />
         </>
       ) : null}
 
       {junctions.map((junction) => {
-        const color = LEVEL_COLOR[junction.congestion_level] ?? LEVEL_COLOR["LOW"];
         const selected = junction.junction_id === selectedId;
         const crossed = onRoute.has(junction.junction_id);
-        const dim = active && !crossed && !selected ? 0.35 : 1;
-        const base = 5 + Math.min(1, junction.avg_vehicle_count / 70) * 4;
         return (
-          <CircleMarker
+          <JunctionMarker
             key={junction.junction_id}
-            center={[junction.latitude, junction.longitude]}
-            radius={selected ? base + 4 : crossed ? base + 2 : base}
-            pathOptions={{
-              color: selected || crossed ? "#ffffff" : color,
-              fillColor: color,
-              fillOpacity: 0.85 * dim,
-              opacity: dim,
-              weight: selected ? 3 : crossed ? 2.5 : 1.5,
-            }}
-            eventHandlers={{ click: () => onSelect(junction.junction_id) }}
-          >
-            <Tooltip direction="top" offset={[0, -8]} opacity={1}>
-              <span className="font-medium">{junction.name}</span>
-              <br />
-              {junction.zone} · {junction.congestion_level.toLowerCase()} · avg{" "}
-              {junction.avg_vehicle_count} vehicles
-            </Tooltip>
-          </CircleMarker>
+            id={junction.junction_id}
+            lat={junction.latitude}
+            lng={junction.longitude}
+            name={junction.name}
+            zone={junction.zone}
+            level={junction.congestion_level}
+            avg={junction.avg_vehicle_count}
+            selected={selected}
+            crossed={crossed}
+            dim={active && !crossed && !selected ? 0.35 : 1}
+            onSelect={handleSelect}
+          />
         );
       })}
 
@@ -201,11 +328,18 @@ export default function OpsMap({
 }
 
 function Pin({ point, color }: { point: Endpoint; color: string }) {
+  const center = useMemo<[number, number]>(() => [point.lat, point.lng], [point.lat, point.lng]);
   return (
     <CircleMarker
-      center={[point.lat, point.lng]}
+      center={center}
       radius={9}
-      pathOptions={{ color: "#ffffff", fillColor: color, fillOpacity: 1, weight: 3 }}
+      pathOptions={{
+        color: "#ffffff",
+        fillColor: color,
+        fillOpacity: 1,
+        weight: 3,
+        bubblingMouseEvents: false,
+      }}
     >
       <Tooltip permanent direction="top" offset={[0, -10]} opacity={1}>
         {point.label}

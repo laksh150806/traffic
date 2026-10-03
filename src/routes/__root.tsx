@@ -82,7 +82,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       {
         name: "description",
         content:
-          "Adaptive traffic signal control dashboard with live junction congestion, vehicle counts and CCTV detection.",
+          "Adaptive traffic signal control for 69 Chennai junctions: a queue model sets the green times, with a forecast and trip planner. Traffic is simulated.",
       },
       { property: "og:title", content: "Smart Traffic Management" },
       {
@@ -90,7 +90,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         content: "Adaptive signal control dashboard for city traffic operations.",
       },
       { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:card", content: "summary" },
     ],
     links: [
       {

@@ -6,6 +6,12 @@ import type { JunctionSummary } from "@/lib/traffic-data";
 
 const LEVELS = ["ALL", "HIGH", "MODERATE", "LOW"] as const;
 
+const LEVEL_NAME: Record<string, string> = {
+  LOW: "Free flowing",
+  MODERATE: "Busy",
+  HIGH: "Jammed",
+};
+
 const DOT: Record<string, string> = {
   LOW: "bg-signal-low",
   MODERATE: "bg-signal-moderate",
@@ -62,6 +68,7 @@ export function JunctionList({ junctions, selectedId, onSelect, loading }: Props
             key={item}
             type="button"
             onClick={() => setZone(item)}
+            aria-pressed={zone === item}
             className={`glass-chip px-3 py-1 text-[11px] transition-data ${
               zone === item
                 ? "!border-primary/50 !bg-primary/20 text-primary"
@@ -79,6 +86,7 @@ export function JunctionList({ junctions, selectedId, onSelect, loading }: Props
             key={item}
             type="button"
             onClick={() => setLevel(item)}
+            aria-pressed={level === item}
             className={`glass-chip px-3 py-1 text-[11px] transition-data ${
               level === item
                 ? "!border-primary/50 !bg-primary/20 text-primary"
@@ -102,7 +110,8 @@ export function JunctionList({ junctions, selectedId, onSelect, loading }: Props
                   key={junction.junction_id}
                   type="button"
                   onClick={() => onSelect(junction.junction_id)}
-                  className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-2 text-left transition-data ${
+                  aria-current={active ? "true" : undefined}
+                  className={`flex min-h-11 w-full items-center gap-2 rounded-md border px-2.5 py-2 text-left transition-data ${
                     active
                       ? "border-primary/50 bg-primary/12 shadow-[0_0_0_1px_oklch(0.82_0.13_205/0.2),0_12px_30px_-16px_var(--primary)]"
                       : "border-transparent hover:border-white/10 hover:bg-white/6"
@@ -110,10 +119,12 @@ export function JunctionList({ junctions, selectedId, onSelect, loading }: Props
                 >
                   <span
                     className={`h-2 w-2 shrink-0 rounded-full ${DOT[junction.congestion_level] ?? DOT["LOW"]}`}
+                    aria-hidden
                   />
+                  <span className="sr-only">{LEVEL_NAME[junction.congestion_level] ?? ""}:</span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-xs font-medium">{junction.name}</span>
-                    <span className="block text-[10px] text-muted-foreground">{junction.zone}</span>
+                    <span className="block text-[11px] text-muted-foreground">{junction.zone}</span>
                   </span>
                   <span className="numeric text-xs">{junction.avg_vehicle_count}</span>
                 </button>

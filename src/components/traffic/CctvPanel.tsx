@@ -8,11 +8,13 @@ import {
   YAxis,
 } from "recharts";
 import { Video } from "lucide-react";
+import { useReducedMotion } from "motion/react";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { CctvPoint } from "@/lib/traffic-data";
 
 export function CctvPanel({ data, loading }: { data: CctvPoint[]; loading: boolean }) {
   const latest = data.length > 0 ? data[data.length - 1] : null;
+  const reduceMotion = useReducedMotion() ?? false;
 
   return (
     <section className="panel p-4">
@@ -20,15 +22,16 @@ export function CctvPanel({ data, loading }: { data: CctvPoint[]; loading: boole
         <div>
           <h2 className="flex items-center gap-2 text-lg font-semibold">
             <Video className="h-4 w-4 text-primary" />
-            CCTV vehicle detection
+            Simulated CCTV detection
           </h2>
           <p className="text-xs text-muted-foreground">
-            Live feed — vehicles detected per analysed frame across this junction's cameras.
+            Vehicles a camera model would detect per frame, generated from the simulated queue plus
+            noise. There is no real video.
           </p>
         </div>
         <span className="flex items-center gap-1.5 rounded-full glass-inset px-3 py-1 text-[11px] text-muted-foreground">
-          <span className="h-1.5 w-1.5 rounded-full bg-signal-high signal-live" />
-          LIVE
+          <span className="h-1.5 w-1.5 rounded-full bg-signal-moderate signal-live" />
+          SIMULATED
           {latest ? (
             <span className="numeric ml-1 text-foreground">
               {latest.camera_name}, {Math.round(latest.confidence_avg * 100)}% confidence
@@ -49,12 +52,15 @@ export function CctvPanel({ data, loading }: { data: CctvPoint[]; loading: boole
             <LineChart data={data}>
               <CartesianGrid stroke="var(--border)" vertical={false} />
               <XAxis
-                dataKey="frame_number"
+                dataKey="analyzed_at"
                 stroke="var(--muted-foreground)"
                 tick={{ fontSize: 11 }}
                 tickLine={false}
                 axisLine={{ stroke: "var(--border)" }}
-                tickFormatter={(v: number) => `f${v}`}
+                minTickGap={24}
+                tickFormatter={(v: string) =>
+                  new Date(v).toLocaleTimeString([], { minute: "2-digit", second: "2-digit" })
+                }
               />
               <YAxis
                 stroke="var(--muted-foreground)"
@@ -72,11 +78,14 @@ export function CctvPanel({ data, loading }: { data: CctvPoint[]; loading: boole
                   fontSize: "12px",
                   color: "var(--foreground)",
                 }}
-                labelFormatter={(v) => `Frame ${v}`}
-                formatter={(value: number, _name, entry) => [
-                  `${value} vehicles`,
-                  (entry?.payload as CctvPoint | undefined)?.camera_name ?? "Camera",
-                ]}
+                labelFormatter={(v) => new Date(String(v)).toLocaleTimeString()}
+                formatter={(value: number, _name, entry) => {
+                  const point = entry?.payload as CctvPoint | undefined;
+                  return [
+                    `${value} vehicles`,
+                    `${point?.camera_name ?? "Camera"}, frame ${point?.frame_number ?? "?"}`,
+                  ];
+                }}
               />
               <Line
                 type="monotone"
@@ -85,6 +94,7 @@ export function CctvPanel({ data, loading }: { data: CctvPoint[]; loading: boole
                 strokeWidth={2}
                 dot={{ r: 2, fill: "var(--primary)" }}
                 activeDot={{ r: 4 }}
+                isAnimationActive={!reduceMotion}
                 animationDuration={350}
               />
             </LineChart>

@@ -25,7 +25,10 @@ type Props = {
   onRouteIndex: (index: number) => void;
   loading: boolean;
   error: string | null;
+  errorKind: "no-route" | "busy" | "unreachable" | null;
   departAt: Date;
+  /** True when leaving at the present moment rather than at a forecast time. */
+  departNow: boolean;
   levelOf: (junctionId: number) => string;
 };
 
@@ -50,7 +53,7 @@ function PickButton({
       aria-label={`Pick the ${which === "from" ? "start" : "destination"} on the map`}
       aria-pressed={pick === which}
       onClick={() => onPickMode(pick === which ? null : which)}
-      className={`glass-chip p-2.5 ${pick === which ? "text-primary" : "text-muted-foreground"}`}
+      className={`glass-chip min-h-11 min-w-11 p-3 ${pick === which ? "text-primary" : "text-muted-foreground"}`}
     >
       <Crosshair className="h-4 w-4" />
     </button>
@@ -59,7 +62,7 @@ function PickButton({
 
 export function DirectionsPanel(props: Props) {
   const { junctions, from, to, onFrom, onTo, pick, onPickMode, assessments, routeIndex } = props;
-  const [open, setOpen] = useState<number | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
   const swap = () => {
     onFrom(to);
     onTo(from);
@@ -102,7 +105,7 @@ export function DirectionsPanel(props: Props) {
           <p className="text-xs text-muted-foreground">
             {pick
               ? "Click the map to drop the pin."
-              : `Leaving at ${formatIstTime(props.departAt)}. Change it with the time bar.`}
+              : `Leaving ${props.departNow ? "now" : `at ${formatIstTime(props.departAt)}`}. Change it with the time bar.`}
           </p>
           <button
             type="button"
@@ -128,16 +131,19 @@ export function DirectionsPanel(props: Props) {
         >
           <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>
-            The routing service could not be reached, so this is a straight-line estimate and roads
-            are not followed. ({props.error})
+            {props.errorKind === "no-route"
+              ? "No drivable road route was found between these two points. Try moving a pin onto a road."
+              : props.errorKind === "busy"
+                ? `The free routing service is busy right now, so this is a straight-line estimate and roads are not followed. Try again in a minute. (${props.error})`
+                : `The routing service could not be reached, so this is a straight-line estimate and roads are not followed. (${props.error})`}
           </span>
         </p>
       ) : null}
 
-      {!props.loading && assessments.length === 0 ? (
+      {!props.loading && assessments.length === 0 && props.errorKind !== "no-route" ? (
         <p className="px-1 text-sm text-muted-foreground">
-          Pick two junctions to see how long the trip takes once the signals are counted, and which
-          route the signal timing favours.
+          Pick two junctions to see how long the trip takes once the delay at the modelled junctions
+          is counted, and which route the signal timing favours.
         </p>
       ) : null}
 
@@ -146,7 +152,7 @@ export function DirectionsPanel(props: Props) {
           const gained = a.etaFixedSec - a.etaAdaptiveSec;
           const chosen = index === routeIndex;
           return (
-            <li key={index}>
+            <li key={a.id}>
               <div
                 className={`glass-inset transition-data p-3 ${chosen ? "ring-1 ring-primary/70" : ""}`}
               >
@@ -154,9 +160,10 @@ export function DirectionsPanel(props: Props) {
                   type="button"
                   onClick={() => {
                     props.onRouteIndex(index);
-                    setOpen(open === index ? null : index);
+                    setOpen(open === a.id ? null : a.id);
                   }}
                   aria-pressed={chosen}
+                  aria-expanded={open === a.id}
                   className="block w-full text-left"
                 >
                   <div className="flex items-baseline justify-between gap-2">
@@ -171,13 +178,20 @@ export function DirectionsPanel(props: Props) {
                     </span>
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {formatMinutes(a.driveSec)} driving plus {formatMinutes(a.signalAdaptiveSec)} at{" "}
-                    {a.junctions.length} {a.junctions.length === 1 ? "signal" : "signals"}
+                    {formatMinutes(a.driveSec)} driving
+                    {a.junctions.length === 0
+                      ? ", no modelled junctions on the way"
+                      : ` plus ${formatMinutes(a.signalAdaptiveSec)} at ${a.junctions.length} modelled ${a.junctions.length === 1 ? "junction" : "junctions"}`}
                   </p>
                   {gained >= 30 ? (
                     <p className="mt-1 text-xs text-primary">
-                      Adaptive timing saves about {formatMinutes(gained)} against fixed timers (
+                      Adaptive timing saves about {formatMinutes(gained)} against the fixed timers (
                       {formatMinutes(a.etaFixedSec)}).
+                    </p>
+                  ) : gained <= -30 ? (
+                    <p className="mt-1 text-xs text-signal-moderate">
+                      The fixed timers would be about {formatMinutes(-gained)} faster on this route
+                      ({formatMinutes(a.etaFixedSec)}).
                     </p>
                   ) : null}
                   {a.worst && a.worst.level !== "LOW" ? (
@@ -187,7 +201,7 @@ export function DirectionsPanel(props: Props) {
                   ) : null}
                 </button>
 
-                {open === index && a.junctions.length > 0 ? (
+                {open === a.id && a.junctions.length > 0 ? (
                   <ol className="mt-3 space-y-1 border-t border-white/10 pt-3">
                     {a.junctions.map((stop) => (
                       <li key={stop.junctionId} className="flex items-center gap-2 text-xs">

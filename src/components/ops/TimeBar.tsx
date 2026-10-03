@@ -1,34 +1,26 @@
 import { Clock, RotateCcw } from "lucide-react";
-import { formatIstTime, istHourOf } from "@/lib/forecast";
+import { dayLabel, formatIstTime, minutesUntilIst } from "@/lib/forecast";
 
 export const MAX_OFFSET_MIN = 24 * 60;
 const STEP_MIN = 5;
 
-/** Minutes from `now` until the next time the Chennai clock reads `hour`. */
-function minutesUntil(now: Date, hour: number) {
-  const current = istHourOf(now) * 60;
-  const target = hour * 60;
-  const diff = target - current;
-  return Math.round((diff <= 0 ? diff + 24 * 60 : diff) / STEP_MIN) * STEP_MIN;
-}
-
-function dayLabel(now: Date, at: Date) {
-  const nowDay = Math.floor((now.getTime() + 5.5 * 3600_000) / 86_400_000);
-  const atDay = Math.floor((at.getTime() + 5.5 * 3600_000) / 86_400_000);
-  return atDay > nowDay ? "tomorrow" : "today";
-}
+const minutesUntil = (now: Date, hour: number) => minutesUntilIst(now, hour, STEP_MIN);
 
 export function TimeBar({
   now,
+  clock,
   offsetMin,
   onChange,
 }: {
+  /** The clock snapped to 5 minutes: the slider counts minutes from here. */
   now: Date;
+  /** The real clock, shown while looking at the present. */
+  clock: Date;
   offsetMin: number;
   onChange: (minutes: number) => void;
 }) {
-  const at = new Date(now.getTime() + offsetMin * 60_000);
   const live = offsetMin === 0;
+  const at = live ? clock : new Date(now.getTime() + offsetMin * 60_000);
   const shortcuts = [
     { label: "Morning peak", minutes: minutesUntil(now, 9) },
     { label: "Evening peak", minutes: minutesUntil(now, 18.5) },
@@ -54,7 +46,7 @@ export function TimeBar({
         onChange={(event) => onChange(Number(event.target.value))}
         aria-label="Time to look at, from now to 24 hours ahead"
         aria-valuetext={`${live ? "Now" : formatIstTime(at)}`}
-        className="h-1.5 w-full min-w-0 flex-1 cursor-pointer accent-[var(--primary)]"
+        className="h-6 w-full min-w-0 flex-1 cursor-pointer accent-[var(--primary)]"
       />
 
       <div className="flex flex-wrap items-center gap-1.5">
@@ -63,7 +55,7 @@ export function TimeBar({
             key={s.label}
             type="button"
             onClick={() => onChange(s.minutes)}
-            className="glass-chip px-3 py-1 text-xs text-muted-foreground hover:text-foreground"
+            className="glass-chip min-h-9 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
           >
             {s.label}
           </button>
@@ -72,7 +64,7 @@ export function TimeBar({
           type="button"
           onClick={() => onChange(0)}
           disabled={live}
-          className="glass-button inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium disabled:opacity-40"
+          className="glass-button inline-flex min-h-9 items-center gap-1.5 px-3 py-1.5 text-xs font-medium disabled:opacity-40"
         >
           <RotateCcw className="h-3 w-3" /> Now
         </button>

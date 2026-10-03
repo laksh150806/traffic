@@ -36,9 +36,10 @@ export function ModelPanel({
             Traffic model & prediction
           </h2>
           <p className="text-xs text-muted-foreground">
-            Arrival rates are estimated from the live readings, the cycle is set by Webster&apos;s
-            optimal-cycle formula, and waiting time is predicted from queue behaviour — not from the
-            timer difference.
+            Arrival rates are estimated from the detector readings, the cycle is set by
+            Webster&apos;s optimal-cycle formula, and waiting time is predicted with the standard
+            signalised-junction delay equation. These are model predictions on simulated traffic,
+            not measurements.
           </p>
         </div>
         <span className="flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
@@ -71,12 +72,20 @@ export function ModelPanel({
               </p>
             </div>
             <div className="glass-inset p-3">
-              <p className="meta-label">Predicted congestion drop</p>
-              <p className="numeric mt-1 text-xl text-primary transition-data">
-                {reduction > 0 ? reduction.toFixed(0) : "0"}
-                <span className="ml-0.5 text-xs text-muted-foreground">%</span>
+              <p className="meta-label">Wait vs the fixed timer</p>
+              <p
+                className={`numeric mt-1 text-xl transition-data ${
+                  reduction >= 0 ? "text-primary" : "text-signal-moderate"
+                }`}
+              >
+                {Math.abs(Math.round(reduction))}
+                <span className="ml-0.5 text-xs text-muted-foreground">
+                  % {reduction >= 0 ? "shorter" : "longer"}
+                </span>
               </p>
-              <p className="mt-1 text-[11px] text-muted-foreground">vs fixed 26 s / 120 s plan</p>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                timer set for this junction&apos;s all-day average
+              </p>
             </div>
             <div className="glass-inset p-3">
               <p className="meta-label">Queue forecast accuracy</p>
@@ -85,8 +94,10 @@ export function ModelPanel({
                 <span className="ml-0.5 text-xs text-muted-foreground">%</span>
               </p>
               <p className="mt-1 text-[11px] text-muted-foreground">
-                ±{performance?.meanAbsError ?? 0} vehicles over{" "}
-                <span className="numeric">{performance?.samples ?? 0}</span> checks
+                ±{performance?.meanAbsError ?? 0} vehicles, against ±
+                {performance?.baselineMeanAbsError ?? 0} for guessing &quot;no change&quot;, over{" "}
+                <span className="numeric">{performance?.samples ?? 0}</span> checks. Scored against
+                the simulator, not real roads.
               </p>
             </div>
           </div>
@@ -97,11 +108,11 @@ export function ModelPanel({
                 <tr className="border-b border-border">
                   <th className="py-2 pr-3 font-medium">Approach</th>
                   <th className="py-2 pr-3 font-medium">Arrivals</th>
-                  <th className="py-2 pr-3 font-medium">Discharge</th>
+                  <th className="py-2 pr-3 font-medium">Saturation flow</th>
                   <th className="py-2 pr-3 font-medium">Load</th>
                   <th className="py-2 pr-3 font-medium">Green</th>
                   <th className="py-2 pr-3 font-medium">Queue now to next</th>
-                  <th className="py-2 font-medium">Wait</th>
+                  <th className="py-2 font-medium">Wait, adaptive / fixed</th>
                 </tr>
               </thead>
               <tbody>
@@ -119,9 +130,17 @@ export function ModelPanel({
                     <td className="numeric py-2 pr-3">
                       {a.queue_now} to {a.predicted_queue_next}
                       {a.queue_clears ? (
-                        <CheckCircle2 className="ml-1 inline h-3 w-3 text-signal-low" />
+                        <CheckCircle2
+                          className="ml-1 inline h-3 w-3 text-signal-low"
+                          role="img"
+                          aria-label="Queue clears"
+                        />
                       ) : (
-                        <AlertTriangle className="ml-1 inline h-3 w-3 text-signal-moderate" />
+                        <AlertTriangle
+                          className="ml-1 inline h-3 w-3 text-signal-moderate"
+                          role="img"
+                          aria-label="Queue does not clear"
+                        />
                       )}
                     </td>
                     <td className="numeric py-2">

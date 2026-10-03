@@ -101,6 +101,7 @@ export function RoadList({ roads, loading }: { roads: RoadState[]; loading: bool
                       ? "bg-signal-low shadow-[0_0_10px_2px_var(--signal-low)] signal-live"
                       : "bg-muted"
                   }`}
+                  role="img"
                   aria-label={road.is_currently_green ? "Green now" : "Red"}
                 />
               </div>

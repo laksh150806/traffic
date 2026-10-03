@@ -68,6 +68,30 @@ describe("assessRoute", () => {
     expect(a.worst?.junctionId).toBe(1);
   });
 
+  it("prices each junction at the time the vehicle reaches it", () => {
+    const here = [
+      { junctionId: 1, name: "A", alongM: 0, offM: 5 },
+      { junctionId: 2, name: "B", alongM: 9_000, offM: 5 },
+    ];
+    const seen: Array<[number, number]> = [];
+    const priced = assessRoute(route, here, (id, secondsIn) => {
+      seen.push([id, Math.round(secondsIn)]);
+      return peak.get(id);
+    });
+    expect(seen).toEqual([
+      [1, 0],
+      [2, 810],
+    ]);
+    expect(priced.junctions).toHaveLength(2);
+  });
+
+  it("gives a route the same id wherever it ranks", () => {
+    const a = assessRoute(route, [], peak);
+    const b = assessRoute({ ...route, durationSec: 5000 }, [], peak);
+    expect(a.id).toBe(b.id);
+    expect(a.id).not.toBe(assessRoute({ ...route, distanceM: 12_000 }, [], peak).id);
+  });
+
   it("reports no worst junction when the route crosses none", () => {
     const a = assessRoute(route, [], peak);
     expect(a.etaAdaptiveSec).toBe(900);
@@ -126,6 +150,33 @@ describe("fetchOsrmRoutes", () => {
     await expect(fetchOsrmRoutes([0, 0], [1, 1], undefined, down)).rejects.toThrow(/503/);
   });
 
+  it("tells apart a missing route, a busy service and an unreachable one", async () => {
+    const busy = (async () => ({ ok: false, status: 429 })) as unknown as typeof fetch;
+    await expect(fetchOsrmRoutes([0, 0], [1, 1], undefined, busy)).rejects.toMatchObject({
+      kind: "busy",
+    });
+    await expect(
+      fetchOsrmRoutes([0, 0], [1, 1], undefined, ok({ code: "NoRoute" })),
+    ).rejects.toMatchObject({ kind: "no-route" });
+    const offline = (async () => {
+      throw new TypeError("fetch failed");
+    }) as unknown as typeof fetch;
+    await expect(fetchOsrmRoutes([0, 0], [1, 1], undefined, offline)).rejects.toMatchObject({
+      kind: "unreachable",
+    });
+  });
+
+  it("rethrows the caller's own abort so it is not reported as an outage", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const aborted = (async () => {
+      throw new DOMException("aborted", "AbortError");
+    }) as unknown as typeof fetch;
+    await expect(fetchOsrmRoutes([0, 0], [1, 1], controller.signal, aborted)).rejects.toMatchObject(
+      { name: "AbortError" },
+    );
+  });
+
   it("falls back to a labelled straight-line estimate", () => {
     const r = straightLineRoute([80, 13], [80.1, 13]);
     expect(r.coordinates).toHaveLength(2);
@@ -135,7 +186,9 @@ describe("fetchOsrmRoutes", () => {
 
 describe("formatting", () => {
   it("prints minutes and kilometres", () => {
-    expect(formatMinutes(30)).toBe("1 min");
+    expect(formatMinutes(30)).toBe("30 s");
+    expect(formatMinutes(0)).toBe("0 s");
+    expect(formatMinutes(75)).toBe("1 min");
     expect(formatMinutes(25 * 60)).toBe("25 min");
     expect(formatMinutes(95 * 60)).toBe("1 h 35 min");
     expect(formatKm(4200)).toBe("4.2 km");

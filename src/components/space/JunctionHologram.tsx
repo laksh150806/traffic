@@ -20,7 +20,7 @@ const ARM: Record<string, { dir: [number, number]; label: string }> = {
 
 const MAX_CARS = 18;
 const LANE_OFFSET = 0.2;
-const ROW_GAP = 0.34;
+const ROW_GAP = 0.26;
 const FIRST_ROW = 0.82;
 
 /** Built once and shared by every approach; per-car geometry is what makes scenes heavy. */

@@ -15,6 +15,7 @@ import type {
   CongestionLevel,
   CyclePoint,
   JunctionSummary,
+  ModelledSaving,
   ModelPerformance,
   RoadState,
 } from "@/lib/traffic-types";
@@ -26,6 +27,7 @@ export type {
   CongestionLevel,
   CyclePoint,
   JunctionSummary,
+  ModelledSaving,
   ModelPerformance,
   RoadState,
 } from "@/lib/traffic-types";
@@ -74,11 +76,9 @@ export async function fetchRoadStates(junctionId: number): Promise<RoadState[]> 
       .select("road_id, green_duration_sec, timing_mode, is_currently_green, updated_at")
       .in("road_id", roadIds),
     supabase
-      .from("vehicle_counts")
-      .select("road_id, vehicle_count, source, recorded_at")
-      .in("road_id", roadIds)
-      .order("recorded_at", { ascending: false })
-      .limit(120),
+      .from("v_latest_vehicle_count")
+      .select("road_id, vehicle_count, recorded_at")
+      .in("road_id", roadIds),
   ]);
 
   const timingByRoad = new Map(
@@ -100,7 +100,7 @@ export async function fetchRoadStates(junctionId: number): Promise<RoadState[]> 
         road_name: road.road_name,
         max_capacity: road.max_capacity,
         vehicle_count: Number(latest?.["vehicle_count"] ?? 0),
-        source: String(latest?.["source"] ?? "SIMULATED_SENSOR"),
+        source: "SIMULATED_SENSOR",
         recorded_at: (latest?.["recorded_at"] as string | undefined) ?? null,
         green_duration_sec: Number(timing?.["green_duration_sec"] ?? 30),
         timing_mode: String(timing?.["timing_mode"] ?? "ADAPTIVE"),
@@ -163,34 +163,41 @@ export async function fetchModelPerformance(): Promise<ModelPerformance> {
   const [{ data: accuracy }, { data: state }] = await Promise.all([
     supabase
       .from("model_accuracy")
-      .select("abs_error")
+      .select("abs_error, actual_queue, baseline_queue")
       .order("recorded_at", { ascending: false })
-      .limit(1500),
+      .limit(1000),
     supabase
       .from("model_road_state")
       .select(
-        "arrival_rate_vph, degree_saturation, predicted_delay_adaptive_sec, predicted_delay_fixed_sec",
+        "junction_id, arrival_rate_vph, degree_saturation, predicted_delay_adaptive_sec, predicted_delay_fixed_sec",
       ),
   ]);
 
-  const errors = ((accuracy ?? []) as Array<{ abs_error: number }>).map((r) =>
-    Number(r.abs_error ?? 0),
-  );
-  return computeModelPerformance(errors, (state ?? []) as ModelStateSlice[]);
+  const rows = (accuracy ?? []) as Array<{
+    abs_error: number;
+    actual_queue: number;
+    baseline_queue: number | null;
+  }>;
+  const errors = rows.map((r) => Number(r.abs_error ?? 0));
+  // The naive guess is "the queue stays as it was when the prediction was made".
+  const baseline = rows
+    .filter((r) => r.baseline_queue !== null)
+    .map((r) => Math.abs(Number(r.baseline_queue) - Number(r.actual_queue)));
+  return computeModelPerformance(errors, (state ?? []) as ModelStateSlice[], baseline);
 }
 
-export async function fetchTotalSecondsSaved(): Promise<number> {
+/** Modelled waiting avoided over the last hour, summed across the network (signed). */
+export async function fetchTotalSecondsSaved(): Promise<ModelledSaving> {
   if (isDemo) return demo.demoFetchTotalSecondsSaved();
   const { data, error } = await supabase
-    .from("signal_history")
-    .select("estimated_wait_saved_sec")
-    .order("history_id", { ascending: false })
-    .limit(2000);
+    .from("v_modelled_saving")
+    .select("seconds, window_min")
+    .maybeSingle();
   if (error) throw new Error(error.message);
-  return ((data ?? []) as Array<{ estimated_wait_saved_sec: number }>).reduce(
-    (sum, row) => sum + Number(row.estimated_wait_saved_sec ?? 0),
-    0,
-  );
+  return {
+    seconds: Number(data?.seconds ?? 0),
+    windowMin: Math.max(1, Number(data?.window_min ?? 1)),
+  };
 }
 
 export async function fetchCctvFeed(junctionId: number): Promise<CctvPoint[]> {

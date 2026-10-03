@@ -11,6 +11,9 @@ const RANK = { LOW: 0, MODERATE: 1, HIGH: 2 } as const;
 
 function reason(summary: JunctionSummary, forecast: JunctionForecast | undefined) {
   if (forecast?.overCapacity) return "Over capacity, queues will keep growing";
+  if (forecast && forecast.maxQueue >= 40 && summary.congestion_level !== "LOW") {
+    return "One arm is badly backed up";
+  }
   if (summary.congestion_level === "HIGH") return "Jammed, queues are long";
   if (summary.congestion_level === "MODERATE") return "Busy, close to capacity";
   return "Flowing";
@@ -30,7 +33,9 @@ export function Attention({
   onSelect: (id: number) => void;
   limit?: number;
 }) {
+  // Only junctions that are not flowing freely need attention; show fewer rows when few qualify.
   const ranked = [...junctions]
+    .filter((j) => j.congestion_level !== "LOW")
     .sort(
       (a, b) =>
         RANK[b.congestion_level] - RANK[a.congestion_level] ||
@@ -49,6 +54,11 @@ export function Attention({
           {jammed} of {junctions.length} jammed
         </span>
       </div>
+      {ranked.length === 0 ? (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Every junction is flowing freely at this time.
+        </p>
+      ) : null}
       <ol className="mt-2 space-y-1">
         {ranked.map((junction, index) => (
           <li key={junction.junction_id}>

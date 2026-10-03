@@ -1,9 +1,27 @@
 import { createFileRoute, ClientOnly } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import { useReducedMotion } from "motion/react";
-import { Activity, Car, Compass, Gauge, MapPin, Navigation } from "lucide-react";
+import {
+  Activity,
+  Car,
+  ChevronDown,
+  Compass,
+  Gauge,
+  MapPin,
+  Navigation,
+  ServerCrash,
+} from "lucide-react";
 
 import { DashboardHeader } from "@/components/traffic/DashboardHeader";
 import { JunctionList } from "@/components/traffic/JunctionList";
@@ -19,15 +37,17 @@ import type { Endpoint } from "@/components/ops/OpsMap";
 import { PlaceCard } from "@/components/ops/PlaceCard";
 import { SearchBox } from "@/components/ops/SearchBox";
 import { TimeBar } from "@/components/ops/TimeBar";
-import { useDirections } from "@/components/ops/useDirections";
+import { useDirections, type Pricing } from "@/components/ops/useDirections";
 import { AnimatedNumber } from "@/components/space/AnimatedNumber";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DATA_MODE } from "@/lib/data-mode";
-import { demoAdvance, demoTick, getActiveIncidents } from "@/lib/demo-engine";
+import { demoAdvance, demoTick, getIncidentEnds, getScenarioFactor } from "@/lib/demo-engine";
 import {
   dayProfile,
   forecastAsSummary,
   forecastNetwork,
+  liveAsForecast,
+  type ForecastOptions,
   type JunctionForecast,
 } from "@/lib/forecast";
 import { SEED_JUNCTIONS } from "@/lib/seed-junctions";
@@ -54,16 +74,16 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "A control-room map of 69 Chennai junctions: see where traffic is jammed now or at any hour ahead, plan a trip with signal delay counted, and watch a queue model set the green times.",
+          "A control-room map of 69 Chennai junctions: see where traffic is jammed now or at any hour ahead, plan a trip with junction delay counted, and watch a queue model set the green times. Traffic is simulated.",
       },
       { property: "og:title", content: "Smart Traffic Management" },
       {
         property: "og:description",
         content:
-          "See congestion across Chennai, forecast it, and plan trips with signal delay counted.",
+          "See simulated congestion across Chennai, forecast it, and plan trips with junction delay counted.",
       },
       { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: Dashboard,
@@ -71,72 +91,14 @@ export const Route = createFileRoute("/")({
 
 const isDemo = DATA_MODE === "demo";
 
-/** Shown only if the live backend is briefly unreachable, so the UI never looks dead. */
-const FALLBACK_JUNCTIONS: JunctionSummary[] = [
-  {
-    junction_id: -1,
-    name: "Tambaram Junction",
-    zone: "GST Corridor",
-    latitude: 12.9249,
-    longitude: 80.1,
-    avg_vehicle_count: 52,
-    total_vehicle_count: 208,
-    congestion_level: "MODERATE",
-    last_reading_at: null,
-  },
-  {
-    junction_id: -2,
-    name: "Vandalur Junction",
-    zone: "GST Corridor",
-    latitude: 12.893,
-    longitude: 80.081,
-    avg_vehicle_count: 68,
-    total_vehicle_count: 272,
-    congestion_level: "HIGH",
-    last_reading_at: null,
-  },
-  {
-    junction_id: -3,
-    name: "Chengalpattu Bypass Junction",
-    zone: "GST Corridor",
-    latitude: 12.692,
-    longitude: 79.977,
-    avg_vehicle_count: 24,
-    total_vehicle_count: 96,
-    congestion_level: "LOW",
-    last_reading_at: null,
-  },
-  {
-    junction_id: -4,
-    name: "SRM Main Gate Junction",
-    zone: "GST Corridor",
-    latitude: 12.823,
-    longitude: 80.045,
-    avg_vehicle_count: 41,
-    total_vehicle_count: 164,
-    congestion_level: "MODERATE",
-    last_reading_at: null,
-  },
-  {
-    junction_id: -5,
-    name: "Guduvancheri Junction",
-    zone: "GST Corridor",
-    latitude: 12.842,
-    longitude: 80.06,
-    avg_vehicle_count: 33,
-    total_vehicle_count: 132,
-    congestion_level: "MODERATE",
-    last_reading_at: null,
-  },
-];
-
 const LEGEND = [
   { label: "Free flowing", cls: "bg-signal-low" },
   { label: "Busy", cls: "bg-signal-moderate" },
   { label: "Jammed", cls: "bg-signal-high" },
 ];
 
-const INCIDENT_BOOST = 2.6;
+const NO_JUNCTIONS: JunctionSummary[] = [];
+const NO_INCIDENTS: ReadonlyMap<number, number> = new Map();
 
 type Tab = "explore" | "directions";
 
@@ -152,6 +114,46 @@ function MapFallback() {
   );
 }
 
+/** Shown instead of invented numbers when the live backend cannot be read. */
+function BackendProblem({
+  kind,
+  message,
+  onRetry,
+}: {
+  kind: "down" | "empty";
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <main className="flex flex-1 items-center justify-center p-4">
+      <section role="alert" className="panel max-w-lg space-y-3 p-6">
+        <h2 className="flex items-center gap-2 text-lg font-semibold">
+          <ServerCrash className="h-5 w-5 text-signal-high" aria-hidden />
+          {kind === "down" ? "The live backend is not reachable" : "The database has no junctions"}
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          {kind === "down"
+            ? "No traffic data is shown rather than made-up numbers. Check that the Supabase URL and key in .env.local are right and that the project is running."
+            : "The connection works but the junction table is empty. Run supabase/setup.sql in the Supabase SQL editor to create the schema and the 69 Chennai junctions."}
+        </p>
+        <p className="rounded-lg bg-black/20 px-3 py-2 font-mono text-xs text-muted-foreground">
+          {message}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          To explore without a database, set VITE_DATA_MODE=demo and restart.
+        </p>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="glass-button inline-flex min-h-10 items-center px-4 py-2 text-xs font-semibold"
+        >
+          Try again
+        </button>
+      </section>
+    </main>
+  );
+}
+
 function Dashboard() {
   const queryClient = useQueryClient();
   const reduceMotion = useReducedMotion() ?? false;
@@ -159,12 +161,13 @@ function Dashboard() {
   const liveAdvance = useServerFn(advanceSignals);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [tab, setTab] = useState<Tab>("explore");
-  const [offsetMin, setOffsetMin] = useState(0);
+  // The moment being looked at, as an absolute time, so it does not drift as the clock moves on.
+  const [targetMs, setTargetMs] = useState<number | null>(null);
   const [clock, setClock] = useState(() => new Date());
   const [from, setFrom] = useState<Endpoint | null>(null);
   const [to, setTo] = useState<Endpoint | null>(null);
   const [pick, setPick] = useState<"from" | "to" | null>(null);
-  const [routeIndex, setRouteIndex] = useState(0);
+  const [routeId, setRouteId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const running = useRef(false);
   const advancing = useRef(false);
@@ -179,33 +182,51 @@ function Dashboard() {
     queryFn: fetchJunctions,
     refetchInterval: 6000,
   });
-
-  const liveJunctions = useMemo(
-    () =>
-      junctionsQuery.data && junctionsQuery.data.length > 0
-        ? junctionsQuery.data
-        : isDemo
-          ? []
-          : FALLBACK_JUNCTIONS,
-    [junctionsQuery.data],
-  );
+  const liveJunctions = junctionsQuery.data ?? NO_JUNCTIONS;
 
   // Snapped to 5 minutes so "Evening peak" lands on exactly 6:30 pm whatever the minute is now.
   const base = useMemo(() => new Date(Math.floor(clock.getTime() / 300_000) * 300_000), [clock]);
-  const at = useMemo(() => new Date(base.getTime() + offsetMin * 60_000), [base, offsetMin]);
-  const isForecast = offsetMin > 0;
-
-  // Blocked lanes in the demo raise demand at that junction; the forecast has to know.
-  const boosts = useMemo(
-    () => new Map(isDemo ? getActiveIncidents().map((id) => [id, INCIDENT_BOOST] as const) : []),
-    // Refreshed whenever junction data refreshes, which is what an incident changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [junctionsQuery.dataUpdatedAt],
+  const offsetMin = targetMs === null ? 0 : Math.round((targetMs - base.getTime()) / 60_000);
+  const forecastMs = targetMs !== null && offsetMin > 0 ? targetMs : null;
+  const isForecast = forecastMs !== null;
+  const at = useMemo(() => (forecastMs === null ? base : new Date(forecastMs)), [forecastMs, base]);
+  const setOffset = useCallback(
+    (minutes: number) => setTargetMs(minutes <= 0 ? null : base.getTime() + minutes * 60_000),
+    [base],
   );
+  // Once the chosen moment has passed, we are simply live again.
+  useEffect(() => {
+    if (targetMs !== null && offsetMin <= 0) setTargetMs(null);
+  }, [targetMs, offsetMin]);
+
+  // What the forecast has to assume beyond the clock: a forced scenario and any blocked lanes
+  // that will still be blocked at that moment. Read from the engine on each render (cheap) but
+  // only changes identity when the facts change.
+  const incidentEnds = isDemo ? getIncidentEnds() : NO_INCIDENTS;
+  const incidentKey = [...incidentEnds].map(([id, until]) => `${id}:${until}`).join(",");
+  const scenarioFactor = isDemo && !isForecast ? getScenarioFactor() : undefined;
+  const forecastOptions = useMemo<ForecastOptions>(() => {
+    const incidents = new Set<number>();
+    for (const [id, until] of incidentEnds) if (until > at.getTime()) incidents.add(id);
+    return { ...(scenarioFactor === undefined ? {} : { factor: scenarioFactor }), incidents };
+    // incidentEnds is rebuilt every render; incidentKey says whether it changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [at, incidentKey, scenarioFactor]);
   const forecast = useMemo(
     () =>
-      new Map<number, JunctionForecast>(forecastNetwork(at, boosts).map((f) => [f.junctionId, f])),
-    [at, boosts],
+      new Map<number, JunctionForecast>(
+        forecastNetwork(at, forecastOptions).map((f) => [f.junctionId, f]),
+      ),
+    [at, forecastOptions],
+  );
+  const pricing = useMemo<Pricing>(
+    () => ({
+      ...(scenarioFactor === undefined ? {} : { factor: scenarioFactor }),
+      incidentEnds,
+    }),
+    // incidentEnds is rebuilt every render; incidentKey says whether it changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [incidentKey, scenarioFactor],
   );
 
   // What the map, lists and cards show: live readings now, the model's forecast for later.
@@ -225,7 +246,6 @@ function Dashboard() {
 
   const activeId = selectedId ?? junctions[0]?.junction_id ?? null;
   const selected = junctions.find((j) => j.junction_id === activeId) ?? junctions[0];
-  const selectedForecast = selected ? forecast.get(selected.junction_id) : undefined;
   const isLive = activeId !== null && activeId > 0;
 
   const profile = useMemo(() => {
@@ -233,17 +253,21 @@ function Dashboard() {
     return index >= 0 ? dayProfile(index) : [];
   }, [selected?.junction_id]);
 
+  // keepPreviousData: switching junction keeps the old panels until the new ones arrive,
+  // instead of flashing skeletons and tearing down the 3D scene.
   const roadsQuery = useQuery({
     queryKey: ["roads", activeId],
     queryFn: () => fetchRoadStates(activeId as number),
     enabled: isLive,
     refetchInterval: 2000,
+    placeholderData: keepPreviousData,
   });
   const cyclesQuery = useQuery({
     queryKey: ["cycles", activeId],
     queryFn: () => fetchCycleComparison(activeId as number),
     enabled: isLive,
     refetchInterval: 6000,
+    placeholderData: keepPreviousData,
   });
   const savedQuery = useQuery({
     queryKey: ["saved-total"],
@@ -255,6 +279,7 @@ function Dashboard() {
     queryFn: () => fetchJunctionModel(activeId as number),
     enabled: isLive,
     refetchInterval: 6000,
+    placeholderData: keepPreviousData,
   });
   const performanceQuery = useQuery({
     queryKey: ["model-performance"],
@@ -266,12 +291,14 @@ function Dashboard() {
     queryFn: () => fetchCctvFeed(activeId as number),
     enabled: isLive,
     refetchInterval: 6000,
+    placeholderData: keepPreviousData,
   });
   const camerasQuery = useQuery({
     queryKey: ["cameras", activeId],
     queryFn: () => fetchCameraTiles(activeId as number),
     enabled: isLive,
     refetchInterval: 6000,
+    placeholderData: keepPreviousData,
   });
 
   const refreshAll = useCallback(() => {
@@ -332,8 +359,16 @@ function Dashboard() {
     return stamps.length > 0 ? (stamps[stamps.length - 1] as string) : null;
   }, [junctionsQuery.data]);
 
-  const directions = useDirections(from, to, forecast);
-  useEffect(() => setRouteIndex(0), [directions.assessments.length, from, to]);
+  const directions = useDirections(from, to, at, pricing);
+  const routeIndex = Math.max(
+    0,
+    directions.assessments.findIndex((a) => a.id === routeId),
+  );
+  const chooseRoute = useCallback(
+    (index: number) => setRouteId(directions.assessments[index]?.id ?? null),
+    [directions.assessments],
+  );
+  useEffect(() => setRouteId(null), [from, to]);
 
   const endpointOf = (j: JunctionSummary): Endpoint => ({
     lat: j.latitude,
@@ -368,30 +403,64 @@ function Dashboard() {
 
   const levelOf = (id: number) => forecast.get(id)?.level ?? "LOW";
 
+  // The card shows the running model's own figures for the present, and the forecast for later,
+  // so it never disagrees with the panels beneath it.
+  const selectedForecast = selected ? forecast.get(selected.junction_id) : undefined;
+  const liveCard =
+    !isForecast && selected && isLive && modelQuery.data
+      ? liveAsForecast(selected, modelQuery.data)
+      : undefined;
+  const cardForecast = liveCard ?? selectedForecast;
+
   const roads = roadsQuery.data ?? [];
   const networkVehicles = junctions.reduce((sum, j) => sum + j.total_vehicle_count, 0);
   const jammed = junctions.filter((j) => j.congestion_level === "HIGH").length;
   const perf = performanceQuery.data;
-  const networkReduction =
-    perf && perf.networkDelayFixed > 0
-      ? Math.max(
-          0,
-          Math.round(
-            ((perf.networkDelayFixed - perf.networkDelayAdaptive) / perf.networkDelayFixed) * 100,
-          ),
-        )
-      : 0;
+
+  // Signed: negative means the adaptive plan is predicted to wait longer than the fixed timer.
+  const waitChange = (() => {
+    if (isForecast) {
+      const all = [...forecast.values()];
+      const flow = all.reduce((sum, f) => sum + f.flowVph, 0);
+      const adaptive = all.reduce((sum, f) => sum + f.delayAdaptive * f.flowVph, 0);
+      const fixed = all.reduce((sum, f) => sum + f.delayFixed * f.flowVph, 0);
+      return {
+        percent: fixed > 0 && flow > 0 ? Math.round(((fixed - adaptive) / fixed) * 100) : 0,
+        worse: all.filter((f) => f.delayAdaptive > f.delayFixed + 0.5).length,
+        total: all.length,
+      };
+    }
+    return {
+      percent:
+        perf && perf.networkDelayFixed > 0
+          ? Math.round(
+              ((perf.networkDelayFixed - perf.networkDelayAdaptive) / perf.networkDelayFixed) * 100,
+            )
+          : 0,
+      worse: perf?.junctionsAdaptiveWorse ?? 0,
+      total: perf?.junctionsTotal ?? junctions.length,
+    };
+  })();
 
   const stats = [
-    { label: "Junctions jammed", value: jammed, decimals: 0, suffix: "", icon: Gauge },
-    { label: "Junctions watched", value: junctions.length, decimals: 0, suffix: "", icon: MapPin },
-    { label: "Vehicles waiting", value: networkVehicles, decimals: 0, suffix: "", icon: Car },
+    { label: "Junctions jammed", value: jammed, suffix: "", icon: Gauge, note: null },
     {
-      label: "Predicted wait cut",
-      value: networkReduction,
-      decimals: 0,
+      label: "Junctions watched",
+      value: junctions.length,
+      suffix: "",
+      icon: MapPin,
+      note: null,
+    },
+    { label: "Vehicles waiting", value: networkVehicles, suffix: "", icon: Car, note: null },
+    {
+      label: "Wait cut vs fixed timer",
+      value: waitChange.percent,
       suffix: "%",
       icon: Activity,
+      note:
+        waitChange.worse > 0
+          ? `Predicted worse at ${waitChange.worse} of ${waitChange.total} junctions`
+          : "Predicted no worse at any junction",
     },
   ];
 
@@ -399,9 +468,19 @@ function Dashboard() {
     { id: "explore", label: "Explore", icon: Compass },
     { id: "directions", label: "Directions", icon: Navigation },
   ];
+  const onTabKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+    event.preventDefault();
+    const next: Tab = tab === "explore" ? "directions" : "explore";
+    setTab(next);
+    document.getElementById(`tab-${next}`)?.focus();
+  };
+
+  const backendDown = !isDemo && junctionsQuery.isError && !junctionsQuery.data;
+  const emptyDb = !isDemo && junctionsQuery.isSuccess && junctionsQuery.data.length === 0;
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex min-h-screen flex-col lg:h-screen">
       <DashboardHeader
         lastUpdated={lastUpdated}
         onRecalculate={() => void recalculate()}
@@ -409,225 +488,277 @@ function Dashboard() {
         mode={DATA_MODE}
       />
 
-      <main className="grid flex-1 gap-3 p-3 md:p-4 lg:h-[calc(100vh-96px)] lg:flex-none lg:grid-cols-[290px_minmax(0,1fr)_330px] xl:grid-cols-[350px_minmax(0,1fr)_430px] lg:overflow-hidden">
-        {/* Left: what to do */}
-        <div className="scroll-glass order-2 space-y-3 lg:order-none lg:min-h-0 lg:overflow-y-auto lg:pr-1">
-          <div role="tablist" aria-label="Mode" className="glass-chip flex gap-1 p-1">
-            {tabs.map(({ id, label, icon: Icon }) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={tab === id}
-                onClick={() => setTab(id)}
-                className={`transition-data flex flex-1 items-center justify-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-medium ${
-                  tab === id
-                    ? "bg-primary/20 text-primary shadow-[0_0_0_1px_oklch(0.82_0.13_205/0.4)]"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {tab === "explore" ? (
-            <>
-              <div className="grid grid-cols-2 gap-2">
-                {stats.map((stat) => (
-                  <div key={stat.label} className="glass-inset px-3 py-2.5">
-                    <p className="meta-label flex items-center gap-1.5">
-                      <stat.icon className="h-3 w-3" />
-                      {stat.label}
-                    </p>
-                    {junctionsQuery.isLoading ? (
-                      <Skeleton className="mt-1 h-7 w-14" />
-                    ) : (
-                      <AnimatedNumber
-                        value={stat.value}
-                        decimals={stat.decimals}
-                        suffix={stat.suffix}
-                        className="numeric mt-0.5 block text-2xl"
-                      />
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              <Attention
-                junctions={junctions}
-                forecast={forecast}
-                selectedId={activeId}
-                onSelect={setSelectedId}
-              />
-
-              {isDemo ? (
-                <ScenarioPanel
-                  junctionId={isLive ? activeId : null}
-                  junctionName={selected?.name ?? ""}
-                  onChange={refreshAll}
-                />
-              ) : null}
-
-              <details className="glass-inset group">
-                <summary className="cursor-pointer list-none px-3 py-2.5 text-sm font-medium">
-                  All {junctions.length} junctions
-                </summary>
-                <div className="h-[420px] p-2">
-                  <JunctionList
-                    junctions={junctions}
-                    selectedId={activeId}
-                    onSelect={setSelectedId}
-                    loading={junctionsQuery.isLoading}
-                  />
-                </div>
-              </details>
-            </>
-          ) : (
-            <DirectionsPanel
-              junctions={junctions}
-              from={from}
-              to={to}
-              onFrom={setFrom}
-              onTo={setTo}
-              pick={pick}
-              onPickMode={setPick}
-              assessments={directions.assessments}
-              routeIndex={routeIndex}
-              onRouteIndex={setRouteIndex}
-              loading={directions.loading}
-              error={directions.error}
-              departAt={at}
-              levelOf={levelOf}
-            />
-          )}
-        </div>
-
-        {/* Centre: the map */}
-        <div className="panel @container relative isolate order-1 h-[520px] overflow-hidden lg:order-none lg:h-full">
-          <div className="absolute inset-0 z-0">
-            <ClientOnly fallback={<MapFallback />}>
-              <Suspense fallback={<MapFallback />}>
-                {junctionsQuery.isLoading && !isForecast ? (
-                  <MapFallback />
-                ) : (
-                  <OpsMap
-                    junctions={junctions}
-                    selectedId={activeId}
-                    onSelect={select}
-                    routes={directions.assessments}
-                    routeIndex={routeIndex}
-                    from={from}
-                    to={to}
-                    pick={pick}
-                    onPick={dropPin}
-                    onChooseRoute={setRouteIndex}
-                  />
-                )}
-              </Suspense>
-            </ClientOnly>
-          </div>
-
-          <div className="hud pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-wrap items-start justify-between gap-3 p-3">
-            <div className="pointer-events-auto w-full max-w-[340px]">
-              <SearchBox
-                junctions={junctions}
-                label="Search junctions"
-                placeholder="Search a junction or zone"
-                onPick={(j) => {
-                  setSelectedId(j.junction_id);
-                  setPick(null);
-                }}
-              />
-            </div>
-            <ul className="pointer-events-auto flex flex-wrap gap-2 text-xs text-foreground/90">
-              {LEGEND.map((item) => (
-                <li key={item.label} className="glass-chip flex items-center gap-1.5 px-3 py-1.5">
-                  <span className={`h-2 w-2 rounded-full ${item.cls}`} />
-                  {item.label}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {pick ? (
-            <p
-              role="status"
-              className="glass-chip pointer-events-none absolute left-1/2 top-[68px] z-10 -translate-x-1/2 px-4 py-1.5 text-xs text-primary"
-            >
-              Click a junction or anywhere on the map to set the{" "}
-              {pick === "from" ? "start" : "destination"}
-            </p>
-          ) : null}
-
-          <div className="hud pointer-events-none absolute inset-x-0 bottom-0 z-10 p-3">
-            <TimeBar now={base} offsetMin={offsetMin} onChange={setOffsetMin} />
-          </div>
-        </div>
-
-        {/* Right: the detail */}
-        <div className="scroll-glass order-3 space-y-3 lg:order-none lg:min-h-0 lg:overflow-y-auto lg:pr-1">
-          {selected && selectedForecast ? (
-            <PlaceCard
-              junction={selected}
-              forecast={selectedForecast}
-              profile={profile}
-              at={at}
-              isForecast={isForecast}
-              roads={roads}
-              onDirectionsFrom={() => directionsFrom("from")}
-              onDirectionsTo={() => directionsFrom("to")}
-            />
-          ) : (
-            <Skeleton className="h-64 w-full rounded-2xl" />
-          )}
-
-          <section className="panel overflow-hidden">
-            <div className="relative h-[230px] border-b border-border">
-              <ClientOnly fallback={<Skeleton className="h-full w-full rounded-none" />}>
-                <Suspense fallback={<Skeleton className="h-full w-full rounded-none" />}>
-                  {roads.length > 0 ? (
-                    <JunctionHologram roads={roads} reducedMotion={reduceMotion} />
+      {backendDown || emptyDb ? (
+        <BackendProblem
+          kind={backendDown ? "down" : "empty"}
+          message={
+            junctionsQuery.error instanceof Error
+              ? junctionsQuery.error.message
+              : "No junctions were returned."
+          }
+          onRetry={() => void junctionsQuery.refetch()}
+        />
+      ) : (
+        <main className="grid flex-1 gap-3 p-3 md:p-4 lg:min-h-0 lg:grid-cols-[260px_minmax(0,1fr)_300px] lg:grid-rows-1 lg:overflow-hidden xl:grid-cols-[320px_minmax(0,1fr)_380px] 2xl:grid-cols-[350px_minmax(0,1fr)_430px]">
+          {/* Centre: the map. First in reading order so the search box and map controls come first. */}
+          <div className="panel @container relative isolate h-[520px] overflow-hidden lg:col-start-2 lg:row-start-1 lg:h-full">
+            <div className="absolute inset-0 z-0">
+              <ClientOnly fallback={<MapFallback />}>
+                <Suspense fallback={<MapFallback />}>
+                  {junctionsQuery.isLoading && !isForecast ? (
+                    <MapFallback />
                   ) : (
-                    <Skeleton className="h-full w-full rounded-none" />
+                    <OpsMap
+                      junctions={junctions}
+                      selectedId={activeId}
+                      onSelect={select}
+                      routes={directions.assessments}
+                      routeIndex={routeIndex}
+                      from={from}
+                      to={to}
+                      pick={pick}
+                      onPick={dropPin}
+                      onChooseRoute={chooseRoute}
+                    />
                   )}
                 </Suspense>
               </ClientOnly>
-              <p className="pointer-events-none absolute left-4 top-3 text-xs text-muted-foreground">
-                Live: each block is a queued vehicle, the glowing head has the green.
-              </p>
             </div>
-            <div className="p-4">
-              <h2 className="text-lg font-semibold">Approaches and live signal plan</h2>
-              <p className="mb-4 text-xs text-muted-foreground">
-                Green time comes from the model: cycle length and splits are solved from each
-                approach's estimated arrival rate and discharge capacity. Vehicle readings come from
-                a demand simulator, since Chennai has no public sensor feed. The queue model, timing
-                plan and predictions are real traffic engineering.
-              </p>
-              <RoadList roads={roads} loading={roadsQuery.isLoading && isLive} />
-            </div>
-          </section>
 
-          <ModelPanel
-            approaches={modelQuery.data ?? []}
-            performance={performanceQuery.data}
-            loading={modelQuery.isLoading && isLive}
-          />
-          <CycleChart
-            data={cyclesQuery.data ?? []}
-            totalSaved={savedQuery.data ?? 0}
-            loading={cyclesQuery.isLoading && isLive}
-          />
-          <CameraWall
-            cameras={camerasQuery.data ?? []}
-            roads={roads}
-            loading={camerasQuery.isLoading && isLive}
-          />
-          <CctvPanel data={cctvQuery.data ?? []} loading={cctvQuery.isLoading && isLive} />
-        </div>
-      </main>
+            <div className="hud pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-wrap items-start justify-between gap-3 p-3">
+              <div className="pointer-events-auto w-full max-w-[340px]">
+                <SearchBox
+                  junctions={junctions}
+                  label="Search junctions"
+                  placeholder="Search a junction or zone"
+                  onPick={(j) => {
+                    setSelectedId(j.junction_id);
+                    setPick(null);
+                  }}
+                />
+              </div>
+              <ul className="pointer-events-auto flex flex-wrap gap-2 text-xs text-foreground/90">
+                {LEGEND.map((item) => (
+                  <li key={item.label} className="glass-chip flex items-center gap-1.5 px-3 py-1.5">
+                    <span className={`h-2 w-2 rounded-full ${item.cls}`} />
+                    {item.label}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {pick ? (
+              <p
+                role="status"
+                className="glass-chip pointer-events-none absolute left-1/2 top-[76px] z-10 -translate-x-1/2 px-4 py-1.5 text-xs text-primary"
+              >
+                Click a junction or anywhere on the map to set the{" "}
+                {pick === "from" ? "start" : "destination"}
+              </p>
+            ) : null}
+
+            <div className="hud pointer-events-none absolute inset-x-0 bottom-0 z-10 p-3">
+              <TimeBar now={base} clock={clock} offsetMin={offsetMin} onChange={setOffset} />
+            </div>
+          </div>
+
+          {/* Left: what to do */}
+          <div className="scroll-glass space-y-3 lg:col-start-1 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
+            <div
+              role="tablist"
+              aria-label="Mode"
+              onKeyDown={onTabKey}
+              className="glass-chip flex gap-1 p-1"
+            >
+              {tabs.map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  id={`tab-${id}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === id}
+                  aria-controls={`panel-${id}`}
+                  tabIndex={tab === id ? 0 : -1}
+                  onClick={() => setTab(id)}
+                  className={`transition-data flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium ${
+                    tab === id
+                      ? "bg-primary/20 text-primary shadow-[0_0_0_1px_oklch(0.82_0.13_205/0.4)]"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" aria-hidden />
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {tab === "explore" ? (
+              <div
+                role="tabpanel"
+                id="panel-explore"
+                aria-labelledby="tab-explore"
+                className="space-y-3"
+              >
+                <div className="grid grid-cols-2 gap-2">
+                  {stats.map((stat) => (
+                    <div key={stat.label} className="glass-inset px-3 py-2.5">
+                      <p className="meta-label flex items-center gap-1.5">
+                        <stat.icon className="h-3 w-3" aria-hidden />
+                        {stat.label}
+                      </p>
+                      {junctionsQuery.isLoading ? (
+                        <Skeleton className="mt-1 h-7 w-14" />
+                      ) : (
+                        <AnimatedNumber
+                          value={stat.value}
+                          decimals={0}
+                          suffix={stat.suffix}
+                          className="numeric mt-0.5 block text-2xl"
+                        />
+                      )}
+                      {stat.note ? (
+                        <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                          {stat.note}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+
+                <Attention
+                  junctions={junctions}
+                  forecast={forecast}
+                  selectedId={activeId}
+                  onSelect={select}
+                />
+
+                {isDemo ? (
+                  <ScenarioPanel
+                    junctionId={isLive ? activeId : null}
+                    junctionName={selected?.name ?? ""}
+                    onChange={refreshAll}
+                  />
+                ) : null}
+
+                <details className="glass-inset group">
+                  <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-sm font-medium">
+                    All {junctions.length} junctions
+                    <ChevronDown
+                      className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180"
+                      aria-hidden
+                    />
+                  </summary>
+                  <div className="h-[420px] p-2">
+                    <JunctionList
+                      junctions={junctions}
+                      selectedId={activeId}
+                      onSelect={select}
+                      loading={junctionsQuery.isLoading}
+                    />
+                  </div>
+                </details>
+              </div>
+            ) : (
+              <div
+                role="tabpanel"
+                id="panel-directions"
+                aria-labelledby="tab-directions"
+                className="space-y-3"
+              >
+                <DirectionsPanel
+                  junctions={junctions}
+                  from={from}
+                  to={to}
+                  onFrom={setFrom}
+                  onTo={setTo}
+                  pick={pick}
+                  onPickMode={setPick}
+                  assessments={directions.assessments}
+                  routeIndex={routeIndex}
+                  onRouteIndex={chooseRoute}
+                  loading={directions.loading}
+                  error={directions.error}
+                  errorKind={directions.errorKind}
+                  departAt={at}
+                  departNow={!isForecast}
+                  levelOf={levelOf}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Right: the detail */}
+          <div className="scroll-glass space-y-3 lg:col-start-3 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
+            {selected && cardForecast ? (
+              <PlaceCard
+                junction={selected}
+                forecast={cardForecast}
+                profile={profile}
+                at={at}
+                isForecast={isForecast}
+                fromLiveModel={liveCard !== undefined}
+                roads={roads}
+                onDirectionsFrom={() => directionsFrom("from")}
+                onDirectionsTo={() => directionsFrom("to")}
+              />
+            ) : (
+              <Skeleton className="h-64 w-full rounded-2xl" />
+            )}
+
+            {isForecast ? (
+              <p role="status" className="glass-inset px-3 py-2 text-xs text-muted-foreground">
+                The panels below show the present moment, not the forecast. Return the time bar to
+                Now to match them to the card above.
+              </p>
+            ) : null}
+
+            <section className="panel overflow-hidden">
+              <div className="relative h-[230px] border-b border-border">
+                <ClientOnly fallback={<Skeleton className="h-full w-full rounded-none" />}>
+                  <Suspense fallback={<Skeleton className="h-full w-full rounded-none" />}>
+                    {roads.length > 0 ? (
+                      <JunctionHologram roads={roads} reducedMotion={reduceMotion} />
+                    ) : (
+                      <Skeleton className="h-full w-full rounded-none" />
+                    )}
+                  </Suspense>
+                </ClientOnly>
+                <p className="pointer-events-none absolute left-4 top-3 text-xs text-muted-foreground">
+                  Now: each block is a queued vehicle, the glowing head has the green.
+                </p>
+              </div>
+              <div className="p-4">
+                <h2 className="text-lg font-semibold">Approaches and live signal plan</h2>
+                <p className="mb-4 text-xs text-muted-foreground">
+                  Green time comes from the model: cycle length and splits are solved with
+                  Webster&apos;s method from each approach&apos;s estimated arrival rate and
+                  saturation flow. Vehicle readings come from a demand simulator, since Chennai has
+                  no public sensor feed, so the plans and predictions are real calculations on
+                  simulated traffic.
+                </p>
+                <RoadList roads={roads} loading={roadsQuery.isLoading && isLive} />
+              </div>
+            </section>
+
+            <ModelPanel
+              approaches={modelQuery.data ?? []}
+              performance={performanceQuery.data}
+              loading={modelQuery.isLoading && isLive}
+            />
+            <CycleChart
+              data={cyclesQuery.data ?? []}
+              saving={savedQuery.data}
+              loading={cyclesQuery.isLoading && isLive}
+            />
+            <CameraWall
+              cameras={camerasQuery.data ?? []}
+              roads={roads}
+              loading={camerasQuery.isLoading && isLive}
+            />
+            <CctvPanel data={cctvQuery.data ?? []} loading={cctvQuery.isLoading && isLive} />
+          </div>
+        </main>
+      )}
     </div>
   );
 }
