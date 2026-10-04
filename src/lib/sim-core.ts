@@ -338,3 +338,33 @@ export function decidePhase(approaches: PhaseApproach[], nowMs: number): PhaseDe
     startGreen: Math.round(clamp(next.allocatedGreen, MIN_PHASE_SEC, MAX_PHASE_SEC)),
   };
 }
+
+/**
+ * Hand the green to one named approach, as an operator or an emergency vehicle asks. The running
+ * green is never cut short before `minGreenSec` (the safety floor: a green that has just started
+ * must be allowed to clear the vehicles on it), and the usual 4 s amber and all-red clearance
+ * still applies because the change is made the same way a normal handover is.
+ *
+ * Returns null when the approach already has the green or the running green is still inside its
+ * floor; the caller asks again on the next control step.
+ */
+export function decideForcedPhase(
+  approaches: PhaseApproach[],
+  targetRoadId: number,
+  nowMs: number,
+  minGreenSec: number,
+): PhaseDecision | null {
+  const target = approaches.find((row) => row.roadId === targetRoadId);
+  if (!target) return null;
+  const current = approaches.find((row) => row.isGreen);
+  if (current && current.roadId === targetRoadId) return null;
+  if (current) {
+    const elapsed = nowMs >= current.startedAtMs ? (nowMs - current.startedAtMs) / 1000 : Infinity;
+    if (elapsed < minGreenSec) return null;
+  }
+  return {
+    endRoadId: current ? current.roadId : null,
+    startRoadId: targetRoadId,
+    startGreen: Math.round(clamp(target.allocatedGreen, MIN_PHASE_SEC, MAX_PHASE_SEC)),
+  };
+}

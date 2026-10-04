@@ -97,8 +97,19 @@ export function armForBearing(bearing: number): Arm {
   return 2; // heading west, waits on the east arm
 }
 
+/** Running distance in metres from the start of the polyline to each of its points. */
+export function cumulativeM(coordinates: LngLat[]): number[] {
+  const out: number[] = [0];
+  for (let i = 1; i < coordinates.length; i += 1) {
+    out.push(
+      (out[i - 1] ?? 0) + haversineM(coordinates[i - 1] as LngLat, coordinates[i] as LngLat),
+    );
+  }
+  return out;
+}
+
 /** Point a given distance along the polyline. */
-function pointAt(coordinates: LngLat[], cumulative: number[], distanceM: number): LngLat {
+export function pointAt(coordinates: LngLat[], cumulative: number[], distanceM: number): LngLat {
   const last = cumulative[cumulative.length - 1] ?? 0;
   const target = Math.max(0, Math.min(last, distanceM));
   for (let i = 1; i < coordinates.length; i += 1) {

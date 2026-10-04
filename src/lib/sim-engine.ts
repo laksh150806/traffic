@@ -9,10 +9,14 @@ import { SEED_JUNCTIONS } from "@/lib/seed-junctions";
 import { fixedPlanForJunction } from "@/lib/fixed-plan";
 import { forecastJunction } from "@/lib/forecast";
 import { FIXED_GREEN, clamp, solveJunction, type ApproachInput } from "@/lib/traffic-model";
+import { cumulativeM, pointAt, type LngLat } from "@/lib/routing";
+import { RUN_SETTINGS, type RunKind, type RunStop, type SignalPlan } from "@/lib/priority-run";
 import {
   INCIDENT_CAPACITY_FACTOR,
+  MIN_PHASE_SEC,
   RAIN_CAPACITY_FACTOR,
   approachPressure,
+  decideForcedPhase,
   decidePhase,
   effectiveGreenSeconds,
   incidentRoadId,
@@ -142,6 +146,10 @@ export function resetSimEngine(seed?: number) {
   world = null;
   scenario.mode = "auto";
   scenario.incidents.clear();
+  operatorOverrides.clear();
+  roadIncidents.clear();
+  events.length = 0;
+  run = null;
   random = seed === undefined ? Math.random : seededRandom(seed);
 }
 
@@ -251,14 +259,18 @@ function demandFactor(nowMs: number) {
  * busiest arm of its junction as well.
  */
 function capacityFactorFor(road: Road, nowMs: number) {
-  const wet = getScenarioCapacity();
+  let factor = getScenarioCapacity();
   const until = scenario.incidents.get(road.junctionId);
-  if (until === undefined) return wet;
-  if (until <= nowMs) {
-    scenario.incidents.delete(road.junctionId);
-    return wet;
+  if (until !== undefined) {
+    if (until <= nowMs) scenario.incidents.delete(road.junctionId);
+    else if (road.roadId === incidentRoadId(road.junctionIndex)) factor *= INCIDENT_CAPACITY_FACTOR;
   }
-  return wet * (road.roadId === incidentRoadId(road.junctionIndex) ? INCIDENT_CAPACITY_FACTOR : 1);
+  const report = roadIncidents.get(road.roadId);
+  if (report) {
+    if (report.untilMs <= nowMs) roadIncidents.delete(road.roadId);
+    else factor *= ROAD_INCIDENT_FACTOR[report.kind];
+  }
+  return factor;
 }
 
 /** The capacity share a forced scenario applies to every approach (rain), or 1. */
@@ -286,7 +298,17 @@ export function getScenarioFactor(): number | undefined {
 
 /** Blocked-lane junctions with the time (ms) each block clears. */
 export function getIncidentEnds(nowMs = Date.now()): Map<number, number> {
-  return new Map([...scenario.incidents.entries()].filter(([, until]) => until > nowMs));
+  const ends = new Map([...scenario.incidents.entries()].filter(([, until]) => until > nowMs));
+  // A report on one road also marks its junction on the map and in the forecast (which, for the
+  // future, treats the junction's busiest approach as the affected one).
+  for (const report of roadIncidents.values()) {
+    if (report.untilMs <= nowMs) continue;
+    const junctionId = junctionIdOfRoad(report.roadId);
+    if (junctionId !== undefined) {
+      ends.set(junctionId, Math.max(ends.get(junctionId) ?? 0, report.untilMs));
+    }
+  }
+  return ends;
 }
 
 export function getScenarioMode(): ScenarioMode {
@@ -310,7 +332,354 @@ export function clearIncidents() {
 }
 
 export function getActiveIncidents(nowMs = Date.now()): number[] {
-  return [...scenario.incidents.entries()].filter(([, until]) => until > nowMs).map(([id]) => id);
+  return [...getIncidentEnds(nowMs).keys()];
+}
+
+// ---------------------------------------------------------------------------
+// Activity log
+// ---------------------------------------------------------------------------
+
+export type EngineEvent = { atMs: number; text: string; tone: "info" | "good" | "warn" };
+
+const events: EngineEvent[] = [];
+const MAX_EVENTS = 40;
+
+function logEvent(text: string, tone: EngineEvent["tone"] = "info", atMs = Date.now()) {
+  events.push({ atMs, text, tone });
+  if (events.length > MAX_EVENTS) events.splice(0, events.length - MAX_EVENTS);
+}
+
+/** The most recent things operators and the engine did, newest first. */
+export function getEvents(limit = 8): EngineEvent[] {
+  return events.slice(-limit).reverse();
+}
+
+const junctionIdOfRoad = (roadId: number) => SEED_JUNCTIONS[Math.floor((roadId - 1) / 4)]?.id;
+const junctionNameOf = (junctionId: number) =>
+  SEED_JUNCTIONS.find((j) => j.id === junctionId)?.name ?? `Junction ${junctionId}`;
+
+// ---------------------------------------------------------------------------
+// Operator override: a person takes one junction's green for a while
+// ---------------------------------------------------------------------------
+
+export const OPERATOR_DEFAULT_SEC = 60;
+export const OPERATOR_MIN_SEC = 10;
+export const OPERATOR_MAX_SEC = 180;
+
+export type OperatorOverride = {
+  junctionId: number;
+  roadId: number;
+  sinceMs: number;
+  untilMs: number;
+};
+
+const operatorOverrides = new Map<number, OperatorOverride>();
+
+/**
+ * Give one approach the green and keep it there for a while. The running green is not cut short
+ * inside its safety floor, the usual amber and all-red still happen, and the override ends by
+ * itself, so a forgotten one cannot freeze a junction. Returns false for an approach that is not
+ * at that junction.
+ */
+export function setOperatorOverride(
+  junctionId: number,
+  roadId: number,
+  seconds = OPERATOR_DEFAULT_SEC,
+  nowMs = Date.now(),
+): boolean {
+  const w = ensureWorld();
+  const road = w.roads.find((r) => r.roadId === roadId && r.junctionId === junctionId);
+  if (!road) return false;
+  const secs = clamp(Math.round(seconds), OPERATOR_MIN_SEC, OPERATOR_MAX_SEC);
+  operatorOverrides.set(junctionId, {
+    junctionId,
+    roadId,
+    sinceMs: nowMs,
+    untilMs: nowMs + secs * 1000,
+  });
+  logEvent(
+    `Operator gave ${titleCase(road.direction)} the green at ${junctionNameOf(junctionId)} for ${secs} s`,
+    "warn",
+    nowMs,
+  );
+  return true;
+}
+
+export function clearOperatorOverride(junctionId: number, nowMs = Date.now()) {
+  if (operatorOverrides.delete(junctionId)) {
+    logEvent(`Operator released ${junctionNameOf(junctionId)} to the controller`, "info", nowMs);
+  }
+}
+
+export function getOperatorOverrides(nowMs = Date.now()): OperatorOverride[] {
+  return [...operatorOverrides.values()].filter((o) => o.untilMs > nowMs);
+}
+
+// ---------------------------------------------------------------------------
+// Reported road problems
+// ---------------------------------------------------------------------------
+
+export type RoadIncidentKind = "accident" | "works";
+
+/** Share of an approach's capacity left under each kind of report. */
+export const ROAD_INCIDENT_FACTOR: Record<RoadIncidentKind, number> = {
+  accident: INCIDENT_CAPACITY_FACTOR,
+  works: 0.55,
+};
+export const ROAD_INCIDENT_DEFAULT_SEC = 240;
+
+export type RoadIncident = { roadId: number; kind: RoadIncidentKind; untilMs: number };
+
+const roadIncidents = new Map<number, RoadIncident>();
+
+/** Report an accident or road works on one approach; its capacity drops until it clears. */
+export function reportRoadIncident(
+  roadId: number,
+  kind: RoadIncidentKind,
+  seconds = ROAD_INCIDENT_DEFAULT_SEC,
+  nowMs = Date.now(),
+): boolean {
+  const w = ensureWorld();
+  const road = w.roads.find((r) => r.roadId === roadId);
+  if (!road) return false;
+  roadIncidents.set(roadId, { roadId, kind, untilMs: nowMs + Math.max(30, seconds) * 1000 });
+  logEvent(
+    `${kind === "accident" ? "Accident" : "Road works"} reported on the ${titleCase(road.direction)} approach at ${junctionNameOf(road.junctionId)}`,
+    "warn",
+    nowMs,
+  );
+  return true;
+}
+
+export function clearRoadIncident(roadId: number, nowMs = Date.now()) {
+  const report = roadIncidents.get(roadId);
+  if (report && roadIncidents.delete(roadId)) {
+    const junctionId = junctionIdOfRoad(roadId);
+    logEvent(
+      `${report.kind === "accident" ? "Accident" : "Road works"} cleared${junctionId === undefined ? "" : ` at ${junctionNameOf(junctionId)}`}`,
+      "good",
+      nowMs,
+    );
+  }
+}
+
+export function getRoadIncidents(nowMs = Date.now()): RoadIncident[] {
+  return [...roadIncidents.values()].filter((r) => r.untilMs > nowMs);
+}
+
+// ---------------------------------------------------------------------------
+// Priority runs: an ambulance, or a platoon, that the signals turn green for in turn
+// ---------------------------------------------------------------------------
+
+type RunPhase = "ahead" | "clearing" | "passed";
+
+type RunStopState = RunStop & {
+  phase: RunPhase;
+  /** Vehicles waiting on the other approaches when the priority began. */
+  heldVehicles: number;
+  /** What an ordinary vehicle would wait here, seconds (the model's delay for this approach). */
+  normalWaitSec: number;
+};
+
+type PriorityRun = {
+  kind: RunKind;
+  label: string;
+  startedAtMs: number;
+  /** How many times faster than real time the vehicle is shown moving. */
+  speedFactor: number;
+  totalM: number;
+  coordinates: LngLat[];
+  cumulative: number[];
+  stops: RunStopState[];
+  finishedAtMs: number | null;
+};
+
+let run: PriorityRun | null = null;
+
+export type PriorityRunStatus = {
+  kind: RunKind;
+  label: string;
+  progressM: number;
+  totalM: number;
+  etaSec: number;
+  /** 1 is real time; more shows the run faster so a long route can be watched. */
+  speedFactor: number;
+  finished: boolean;
+  /** The route as [lng, lat] pairs. */
+  coordinates: LngLat[];
+  /** Where the vehicle is now, [lng, lat]. */
+  position: LngLat;
+  stops: Array<RunStop & { phase: RunPhase; heldVehicles: number; normalWaitSec: number }>;
+  /** Waiting an ordinary vehicle would have done at the signals already reached. */
+  savedSec: number;
+  /** Vehicles that were queued on the other approaches while it passed. */
+  heldVehicles: number;
+  passed: number;
+};
+
+/** Start a run along a route. Replaces any run already going. */
+export function startPriorityRun(
+  input: {
+    kind: RunKind;
+    label: string;
+    coordinates: LngLat[];
+    stops: RunStop[];
+    speedFactor?: number;
+  },
+  nowMs = Date.now(),
+) {
+  ensureWorld();
+  const cumulative = cumulativeM(input.coordinates);
+  run = {
+    kind: input.kind,
+    label: input.label,
+    startedAtMs: nowMs,
+    speedFactor: clamp(Math.round(input.speedFactor ?? 1), 1, 10),
+    totalM: cumulative[cumulative.length - 1] ?? 0,
+    coordinates: input.coordinates,
+    cumulative,
+    stops: input.stops.map((stop) => ({
+      ...stop,
+      phase: "ahead",
+      heldVehicles: 0,
+      normalWaitSec: 0,
+    })),
+    finishedAtMs: null,
+  };
+  logEvent(
+    `${input.label} started: ${input.stops.length} signals on the route`,
+    input.kind === "ambulance" ? "warn" : "info",
+    nowMs,
+  );
+}
+
+export function cancelPriorityRun(nowMs = Date.now()) {
+  if (run && run.finishedAtMs === null) {
+    logEvent(`${run.label} cancelled, signals back to the controller`, "info", nowMs);
+  }
+  run = null;
+}
+
+function runProgressM(r: PriorityRun, nowMs: number) {
+  const end = r.finishedAtMs ?? nowMs;
+  return clamp(
+    ((end - r.startedAtMs) / 1000) * RUN_SETTINGS[r.kind].speedMps * r.speedFactor,
+    0,
+    r.totalM,
+  );
+}
+
+export function getPriorityRun(nowMs = Date.now()): PriorityRunStatus | null {
+  if (!run) return null;
+  const settings = RUN_SETTINGS[run.kind];
+  const progressM = runProgressM(run, nowMs);
+  const reached = run.stops.filter((s) => s.phase !== "ahead");
+  return {
+    kind: run.kind,
+    label: run.label,
+    progressM,
+    totalM: run.totalM,
+    etaSec: Math.max(
+      0,
+      Math.round((run.totalM - progressM) / (settings.speedMps * run.speedFactor)),
+    ),
+    speedFactor: run.speedFactor,
+    finished: run.finishedAtMs !== null,
+    coordinates: run.coordinates,
+    position: pointAt(run.coordinates, run.cumulative, progressM),
+    stops: run.stops.map((s) => ({ ...s })),
+    savedSec: reached.reduce((sum, s) => sum + s.normalWaitSec, 0),
+    heldVehicles: reached.reduce((sum, s) => sum + s.heldVehicles, 0),
+    passed: run.stops.filter((s) => s.phase === "passed").length,
+  };
+}
+
+/** Move the run along and mark which signals are now clearing a path for it. */
+function updateRun(w: World, nowMs: number) {
+  if (!run || run.finishedAtMs !== null) return;
+  const settings = RUN_SETTINGS[run.kind];
+  const progress = runProgressM(run, nowMs);
+  // The lead is in seconds of travel, so a run shown faster starts clearing signals further out.
+  const leadM = settings.speedMps * run.speedFactor * settings.leadSec;
+  for (const stop of run.stops) {
+    if (stop.phase === "passed") continue;
+    if (progress >= stop.alongM + settings.clearM) {
+      stop.phase = "passed";
+      logEvent(`${run.label} cleared ${stop.name}`, "good", nowMs);
+    } else if (stop.phase === "ahead" && progress >= stop.alongM - leadM) {
+      stop.phase = "clearing";
+      const others = (w.roadsByJunction.get(stop.junctionId) ?? []).filter(
+        (r) => r.roadId !== stop.roadId,
+      );
+      stop.heldVehicles = others.reduce((sum, r) => sum + (w.sim.get(r.roadId)?.queue ?? 0), 0);
+      stop.normalWaitSec = Math.round(
+        w.sim.get(stop.roadId)?.model?.predicted_delay_adaptive_sec ?? 0,
+      );
+    }
+  }
+  if (progress >= run.totalM) {
+    for (const stop of run.stops) stop.phase = "passed";
+    run.finishedAtMs = nowMs;
+    logEvent(`${run.label} finished its route`, "good", nowMs);
+  }
+}
+
+type PriorityTarget = { roadId: number; minGreenSec: number; untilMs: number | null };
+
+/**
+ * Who has a claim on a junction's green this step. An ambulance outranks an operator, who
+ * outranks a green wave; nothing outranks the safety floor in decideForcedPhase.
+ */
+function priorityTarget(junctionId: number, nowMs: number): PriorityTarget | null {
+  const clearing =
+    run && run.finishedAtMs === null
+      ? run.stops.find((s) => s.junctionId === junctionId && s.phase === "clearing")
+      : undefined;
+  if (run && clearing && run.kind === "ambulance") {
+    return {
+      roadId: clearing.roadId,
+      minGreenSec: RUN_SETTINGS.ambulance.minGreenSec,
+      untilMs: null,
+    };
+  }
+  const override = operatorOverrides.get(junctionId);
+  if (override) {
+    if (override.untilMs <= nowMs) {
+      operatorOverrides.delete(junctionId);
+      logEvent(
+        `Override ended at ${junctionNameOf(junctionId)}, controller back in charge`,
+        "info",
+        nowMs,
+      );
+    } else {
+      return { roadId: override.roadId, minGreenSec: MIN_PHASE_SEC, untilMs: override.untilMs };
+    }
+  }
+  if (run && clearing) {
+    return {
+      roadId: clearing.roadId,
+      minGreenSec: RUN_SETTINGS[run.kind].minGreenSec,
+      untilMs: null,
+    };
+  }
+  return null;
+}
+
+/** What each of these approaches is doing, for projecting a drive along them. */
+export function getSignalPlans(roadIds: number[]): Map<number, SignalPlan> {
+  const w = ensureWorld();
+  const plans = new Map<number, SignalPlan>();
+  for (const roadId of roadIds) {
+    const state = w.sim.get(roadId);
+    if (!state) continue;
+    plans.set(roadId, {
+      isGreen: state.isGreen,
+      phaseStartMs: state.phaseStartMs,
+      greenSec: state.model?.green_sec ?? state.greenSec,
+      cycleSec: state.model?.cycle_length_sec ?? 90,
+    });
+  }
+  return plans;
 }
 
 // ---------------------------------------------------------------------------
@@ -486,8 +855,9 @@ function isOffline(roadId: number) {
 
 function runAdvance(w: World, nowMs: number): number {
   accrueGreen(w, nowMs);
+  updateRun(w, nowMs);
   let switched = 0;
-  for (const roads of w.roadsByJunction.values()) {
+  for (const [junctionId, roads] of w.roadsByJunction) {
     const approaches: PhaseApproach[] = [];
     for (const road of roads) {
       const state = w.sim.get(road.roadId);
@@ -505,7 +875,20 @@ function runAdvance(w: World, nowMs: number): number {
       });
     }
 
-    const decision = decidePhase(approaches, nowMs);
+    const target = priorityTarget(junctionId, nowMs);
+    if (target?.untilMs) {
+      // The green an operator holds is longer than the plan's: show the time they asked for.
+      const held = w.sim.get(target.roadId);
+      if (held?.isGreen) {
+        held.greenSec = Math.max(
+          held.greenSec,
+          Math.ceil((target.untilMs - held.phaseStartMs) / 1000),
+        );
+      }
+    }
+    const decision = target
+      ? decideForcedPhase(approaches, target.roadId, nowMs, target.minGreenSec)
+      : decidePhase(approaches, nowMs);
     if (!decision) continue;
 
     const ending = decision.endRoadId === null ? undefined : w.sim.get(decision.endRoadId);
@@ -517,7 +900,9 @@ function runAdvance(w: World, nowMs: number): number {
     const starting = w.sim.get(decision.startRoadId);
     if (starting) {
       starting.isGreen = true;
-      starting.greenSec = decision.startGreen;
+      starting.greenSec = target?.untilMs
+        ? Math.max(decision.startGreen, Math.ceil((target.untilMs - nowMs) / 1000))
+        : decision.startGreen;
       starting.phaseStartMs = nowMs;
       switched += 1;
     }
