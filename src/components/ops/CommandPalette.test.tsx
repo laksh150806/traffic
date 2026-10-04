@@ -28,7 +28,7 @@ const setup = () => {
   ];
   const run = vi.fn();
   const actions: PaletteAction[] = [
-    { id: "tour", label: "Play the demo tour", keywords: "present", run },
+    { id: "tour", label: "Take the guided tour", keywords: "present", run },
     { id: "now", label: "Back to now", run: vi.fn() },
   ];
   const onPickJunction = vi.fn();
@@ -74,7 +74,7 @@ describe("CommandPalette", () => {
     setup();
     await open();
     expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual([
-      expect.stringContaining("Play the demo tour"),
+      expect.stringContaining("Take the guided tour"),
       expect.stringContaining("Back to now"),
     ]);
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "kath" } });
@@ -88,7 +88,7 @@ describe("CommandPalette", () => {
     await open();
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "present" } });
     expect(screen.getAllByRole("option")).toHaveLength(1);
-    expect(screen.getByRole("option").textContent).toContain("Play the demo tour");
+    expect(screen.getByRole("option").textContent).toContain("Take the guided tour");
   });
 
   it("runs the highlighted action on Enter and closes", async () => {

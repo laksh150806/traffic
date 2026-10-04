@@ -34,8 +34,8 @@ import { ScenarioPanel } from "@/components/traffic/ScenarioPanel";
 import { Attention } from "@/components/ops/Attention";
 import { DirectionsPanel } from "@/components/ops/DirectionsPanel";
 import { CommandPalette, type PaletteAction } from "@/components/ops/CommandPalette";
-import { TourCaption, TourInvite } from "@/components/ops/DemoTour";
-import { useDemoTour } from "@/components/ops/useDemoTour";
+import { TourCaption, TourInvite } from "@/components/ops/GuidedTour";
+import { useGuidedTour } from "@/components/ops/useGuidedTour";
 import type { Endpoint } from "@/components/ops/OpsMap";
 import { PlaceCard } from "@/components/ops/PlaceCard";
 import { ReplayPanel } from "@/components/ops/ReplayPanel";
@@ -49,14 +49,14 @@ import { AnimatedNumber } from "@/components/space/AnimatedNumber";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BROWSER_DRIVES_LOOP, DATA_MODE } from "@/lib/data-mode";
 import {
-  demoAdvance,
-  demoTick,
+  simAdvance,
+  simTick,
   getIncidentEnds,
   getScenarioCapacity,
   getScenarioFactor,
   setScenarioMode,
   type ScenarioMode,
-} from "@/lib/demo-engine";
+} from "@/lib/sim-engine";
 import {
   dayProfile,
   findPeaks,
@@ -106,7 +106,7 @@ export const Route = createFileRoute("/")({
   component: Dashboard,
 });
 
-const isDemo = DATA_MODE === "demo";
+const isSimulated = DATA_MODE === "simulated";
 
 const LEGEND = [
   { label: "Free flowing", cls: "bg-signal-low" },
@@ -157,7 +157,7 @@ function BackendProblem({
           {message}
         </p>
         <p className="text-xs text-muted-foreground">
-          To explore without a database, set VITE_DATA_MODE=demo and restart.
+          To explore without a database, set VITE_DATA_MODE=simulated and restart.
         </p>
         <button
           type="button"
@@ -220,10 +220,10 @@ function Dashboard() {
   // What the forecast has to assume beyond the clock: a forced scenario and any blocked lanes
   // that will still be blocked at that moment. Read from the engine on each render (cheap) but
   // only changes identity when the facts change.
-  const incidentEnds = isDemo ? getIncidentEnds() : NO_INCIDENTS;
+  const incidentEnds = isSimulated ? getIncidentEnds() : NO_INCIDENTS;
   const incidentKey = [...incidentEnds].map(([id, until]) => `${id}:${until}`).join(",");
-  const scenarioFactor = isDemo && !isForecast ? getScenarioFactor() : undefined;
-  const scenarioCapacity = isDemo && !isForecast ? getScenarioCapacity() : 1;
+  const scenarioFactor = isSimulated && !isForecast ? getScenarioFactor() : undefined;
+  const scenarioCapacity = isSimulated && !isForecast ? getScenarioCapacity() : 1;
   const forecastOptions = useMemo<ForecastOptions>(() => {
     const incidents = new Set<number>();
     for (const [id, until] of incidentEnds) if (until > at.getTime()) incidents.add(id);
@@ -337,7 +337,7 @@ function Dashboard() {
     running.current = true;
     setBusy(true);
     try {
-      if (isDemo) demoTick();
+      if (isSimulated) simTick();
       else if (BROWSER_DRIVES_LOOP) await liveTick({});
       refreshAll();
     } catch (error) {
@@ -361,8 +361,8 @@ function Dashboard() {
       if (advancing.current) return;
       advancing.current = true;
       try {
-        const result = isDemo
-          ? demoAdvance()
+        const result = isSimulated
+          ? simAdvance()
           : BROWSER_DRIVES_LOOP
             ? ((await liveAdvance({})) as { switched?: number } | undefined)
             : undefined;
@@ -432,7 +432,7 @@ function Dashboard() {
 
   const levelOf = (id: number) => forecast.get(id)?.level ?? "LOW";
 
-  // The guided demo drives the same controls a person would use.
+  // The guided tour drives the same controls a person would use.
   const tourSnapshot = useCallback(
     (ms: number) => {
       const when = new Date(ms);
@@ -458,7 +458,7 @@ function Dashboard() {
     },
     [base],
   );
-  const tour = useDemoTour({
+  const tour = useGuidedTour({
     base,
     reducedMotion: reduceMotion,
     setTime: setTargetMs,
@@ -630,12 +630,12 @@ function Dashboard() {
 
   const peaks = useMemo(() => findPeaks(base), [base]);
   const paletteActions: PaletteAction[] = [
-    ...(isDemo
+    ...(isSimulated
       ? [
           {
             id: "tour",
-            label: "Play the demo tour",
-            keywords: "demo walkthrough present",
+            label: "Take the guided tour",
+            keywords: "tour walkthrough present guided",
             run: () => void tour.start(),
           },
         ]
@@ -669,7 +669,7 @@ function Dashboard() {
       keywords: "download report data",
       run: exportCsv,
     },
-    ...(isDemo
+    ...(isSimulated
       ? (
           [
             ["auto", "Scenario: follow the clock", "Time of day"],
@@ -690,8 +690,8 @@ function Dashboard() {
       : []),
   ];
 
-  const backendDown = !isDemo && junctionsQuery.isError && !junctionsQuery.data;
-  const emptyDb = !isDemo && junctionsQuery.isSuccess && junctionsQuery.data.length === 0;
+  const backendDown = !isSimulated && junctionsQuery.isError && !junctionsQuery.data;
+  const emptyDb = !isSimulated && junctionsQuery.isSuccess && junctionsQuery.data.length === 0;
 
   return (
     <div className="flex min-h-screen flex-col lg:h-screen">
@@ -700,7 +700,7 @@ function Dashboard() {
         onRecalculate={() => void recalculate()}
         busy={busy}
         mode={DATA_MODE}
-        {...(isDemo ? { onPlayDemo: () => void tour.start(), demoPlaying: tour.active } : {})}
+        {...(isSimulated ? { onStartTour: () => void tour.start(), tourPlaying: tour.active } : {})}
         onShare={shareView}
         shareLabel={shareLabel}
         onExport={exportCsv}
@@ -782,7 +782,7 @@ function Dashboard() {
 
             {tour.caption ? (
               <TourCaption caption={tour.caption} onStop={tour.stop} />
-            ) : isDemo && !isForecast && jammed === 0 && !pick && !inviteDismissed ? (
+            ) : isSimulated && !isForecast && jammed === 0 && !pick && !inviteDismissed ? (
               <TourInvite
                 onStart={() => {
                   setInviteDismissed(true);
@@ -876,7 +876,7 @@ function Dashboard() {
                   onSelect={select}
                 />
 
-                {isDemo ? (
+                {isSimulated ? (
                   <ScenarioPanel
                     junctionId={isLive ? activeId : null}
                     junctionName={selected?.name ?? ""}

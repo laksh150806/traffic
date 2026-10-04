@@ -3,7 +3,7 @@
 //   CONTROL_URL=http://localhost:3000 CONTROL_CRON_SECRET=... node scripts/control-loop.mjs
 //
 // It calls POST /api/control every 2 seconds for the signal controller and every 12 seconds for
-// the model tick, the same cadence the browser used. Run it on your own machine for a demo, or on
+// the model tick, the same cadence the browser used. Run it on your own machine for a test run, or on
 // any always-on host. Stop it with Ctrl+C. Needs Node 22.
 
 const base = (process.env.CONTROL_URL ?? "http://localhost:3000").replace(/\/$/, "");

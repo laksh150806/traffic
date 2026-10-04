@@ -1,5 +1,5 @@
 /**
- * Pure aggregation helpers used by both the Supabase data layer and the demo
+ * Pure aggregation helpers used by both the Supabase data layer and the simulation
  * engine, so the dashboard numbers are computed the same way in either mode.
  */
 import { FIXED_GREEN } from "@/lib/traffic-model";

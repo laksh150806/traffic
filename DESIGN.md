@@ -41,7 +41,7 @@ Mobile stacks: map first (520px tall), then Explore or Directions, then the plac
 ## Motion
 
 - One orchestrated moment: the map flies to the selected junction (~0.8s).
-- The demo tour is the showpiece: a day of traffic sweeps across the map (about 40 seconds),
+- The guided tour is the showpiece: a day of traffic sweeps across the map (about 40 seconds),
   jammed junctions glow and send rings outward, and a caption card narrates each stop.
 - Signal heads go amber, then all red, at every handover: the 4 s the model charges as lost time.
 - Jammed junctions send red rings outward; busy ones carry a soft glow.
@@ -52,7 +52,7 @@ Mobile stacks: map first (520px tall), then Explore or Directions, then the plac
 
 ## Data honesty
 
-All traffic readings are simulated and the UI says so ("Demo data" or "Simulated demand"). The
+All traffic readings are simulated and the UI says so ("Simulated data" or "Simulated demand"). The
 signal model (Webster cycle and delay) is real; the demand feeding it is synthetic.
 
 Camera views and CCTV charts are drawn from the simulated queue and say "Simulated" on the

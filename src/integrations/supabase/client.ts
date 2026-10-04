@@ -43,7 +43,7 @@ function createSupabaseClient() {
       ...(!SUPABASE_URL ? ["VITE_SUPABASE_URL"] : []),
       ...(!SUPABASE_PUBLISHABLE_KEY ? ["VITE_SUPABASE_PUBLISHABLE_KEY"] : []),
     ];
-    const message = `Missing Supabase setting(s): ${missing.join(", ")}. Add them to .env.local (see .env.example), or set VITE_DATA_MODE=demo to run without a database.`;
+    const message = `Missing Supabase setting(s): ${missing.join(", ")}. Add them to .env.local (see .env.example), or set VITE_DATA_MODE=simulated to run without a database.`;
     console.error(`[Supabase] ${message}`);
     throw new Error(message);
   }

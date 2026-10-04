@@ -7,11 +7,11 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Attention } from "@/components/ops/Attention";
-import { TourCaption } from "@/components/ops/DemoTour";
+import { TourCaption } from "@/components/ops/GuidedTour";
 import { ReplayPanel } from "@/components/ops/ReplayPanel";
 import { SearchBox } from "@/components/ops/SearchBox";
 import { TimeBar } from "@/components/ops/TimeBar";
-import { useDemoTour, type TourControls } from "@/components/ops/useDemoTour";
+import { useGuidedTour, type TourControls } from "@/components/ops/useGuidedTour";
 import { RoadList } from "@/components/traffic/RoadList";
 import { findPeaks, forecastNetwork } from "@/lib/forecast";
 import type { JunctionSummary, RoadState } from "@/lib/traffic-types";
@@ -269,11 +269,11 @@ describe("ReplayPanel", () => {
   });
 });
 
-describe("demo tour", () => {
+describe("guided tour", () => {
   const BASE = at(5, 23); // Monday 11 pm, so the next 24 hours include Tuesday's rush
 
   function Harness({ controls }: { controls: TourControls }) {
-    const tour = useDemoTour(controls);
+    const tour = useGuidedTour(controls);
     const [started, setStarted] = useState(false);
     return (
       <div>
@@ -376,7 +376,7 @@ describe("demo tour", () => {
       await vi.advanceTimersByTimeAsync(5_000);
     });
     const callsBefore = m.setTime.mock.calls.length;
-    fireEvent.click(screen.getByLabelText("Stop the demo"));
+    fireEvent.click(screen.getByLabelText("Stop the tour"));
     expect(screen.getByTestId("state").textContent).toBe("false");
     expect(m.clearTrip).toHaveBeenCalled();
     expect(m.setTime).toHaveBeenLastCalledWith(null);

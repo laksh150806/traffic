@@ -25,7 +25,7 @@ const DOT: Record<string, string> = {
 
 /**
  * Ctrl or Cmd plus K (or "/" outside a text field) opens a box that finds a junction or runs an
- * action: play the demo, jump to a peak, change the scenario, copy a link. Everything it does is
+ * action: take the tour, jump to a peak, change the scenario, copy a link. Everything it does is
  * also reachable from the page; this is the fast way for someone at a keyboard.
  */
 export function CommandPalette({

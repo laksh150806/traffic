@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { demoFetchRoadStates } from "@/lib/demo-engine";
+import { simFetchRoadStates } from "@/lib/sim-engine";
 import {
   dayProfile,
   findPeaks,
@@ -14,10 +14,10 @@ import {
 import { SEED_JUNCTIONS } from "@/lib/seed-junctions";
 
 describe("forecast", () => {
-  it("numbers roads the way the demo engine does", () => {
+  it("numbers roads the way the simulation engine does", () => {
     for (const index of [0, 7, 68]) {
       const seed = SEED_JUNCTIONS[index];
-      const ids = demoFetchRoadStates(seed!.id).map((r) => r.road_id);
+      const ids = simFetchRoadStates(seed!.id).map((r) => r.road_id);
       expect(ids.sort((a, b) => a - b)).toEqual([0, 1, 2, 3].map((a) => roadIdFor(index, a)));
     }
   });

@@ -11,7 +11,7 @@ Done
 - [x] Database integrity: composite keys, check constraints, one green per junction,
       a throttle for the control loop, set-based writes, a phase-change trigger, retention in SQL
 - [x] Every migration verified on an in-process Postgres (`npm run test:db`)
-- [x] Guided demo tour and a map that opens on the city, with glowing, pulsing jam markers
+- [x] Guided tour and a map that opens on the city, with glowing, pulsing jam markers
 - [x] Coursework SQL for the DBMS rubric, run and saved by `npm run rubric`
 - [x] Replay of fixed timer against adaptive, which exposed and fixed a controller that was
       losing to the timer at the peaks

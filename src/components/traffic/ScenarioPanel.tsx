@@ -7,7 +7,7 @@ import {
   setScenarioMode,
   triggerIncident,
   type ScenarioMode,
-} from "@/lib/demo-engine";
+} from "@/lib/sim-engine";
 
 const MODES: Array<{ id: ScenarioMode; label: string; hint: string; icon: typeof Timer }> = [
   { id: "auto", label: "Time of day", hint: "Follows Chennai's clock", icon: Timer },
@@ -17,7 +17,7 @@ const MODES: Array<{ id: ScenarioMode; label: string; hint: string; icon: typeof
 ];
 
 /**
- * Demo-only controls. They change what the simulator feeds the signals so the
+ * Scenario controls. They change what the simulator feeds the signals so the
  * model's response can be watched live: that response is the point of the app.
  */
 export function ScenarioPanel({

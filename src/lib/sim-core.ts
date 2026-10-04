@@ -1,6 +1,6 @@
 /**
  * Pure simulation rules shared by the live backend (traffic.functions.ts) and
- * the in-browser demo engine, so both behave identically. No I/O in here.
+ * the in-browser simulation engine, so both behave identically. No I/O in here.
  */
 import { LOST_TIME_PER_PHASE, clamp, saturationFlow } from "@/lib/traffic-model";
 import type { CongestionLevel } from "@/lib/traffic-types";

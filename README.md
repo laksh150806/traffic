@@ -16,7 +16,7 @@ It works like a maps app for a traffic control room:
   it, the fastest route first, and how much the adaptive timing saves against fixed timers.
   Roads and base drive time come from OSRM's public demo server; if it cannot be reached
   the page says so and falls back to a straight-line estimate.
-- **Play demo.** One button runs a guided tour: a simulated day sweeps across the map with a
+- **Take the tour.** One button runs a guided tour: a simulated day sweeps across the map with a
   live count of jammed junctions, the camera stops at the worst junction of each rush hour, then
   a trip is priced across the city. It drives the same controls a person would, so what it shows
   is the real model, played back quickly. Esc stops it.
@@ -44,7 +44,7 @@ npm run dev
 ```
 
 Open the address Vite prints. It works straight away with no backend: by default the
-app runs in **demo mode** and simulates the whole network in the browser.
+app runs in **simulated mode** and simulates the whole network in the browser.
 
 Other scripts:
 
@@ -67,7 +67,7 @@ If the dev server keeps dying on a low-memory machine, use `npm run build` then
 
 Set `VITE_DATA_MODE` in `.env.local` (copy `.env.example`).
 
-- `demo` (default). `src/lib/demo-engine.ts` keeps the junctions, queues, signal plans,
+- `simulated` (default). `src/lib/sim-engine.ts` keeps the junctions, queues, signal plans,
   CCTV counts and history in memory and runs the same model code the server uses.
   The scenario panel lets you switch time of day, force a rush hour and block a lane.
 - `live`. The dashboard reads and writes a Supabase project. The server functions in
@@ -121,7 +121,7 @@ number. Keep them apart in a report.
 **The delay formula** (the dashboard header, the forecast and the trip planner). It asks, for
 steady traffic at one hour, what each plan's average wait would be.
 
-**The replay** (the replay panel, and the figure the demo tour quotes). It runs the controller
+**The replay** (the replay panel, and the figure the guided tour quotes). It runs the controller
 that is actually on the map, in half-hour steps of 2 seconds, beside the junction's fixed timer
 on identical arrivals, and counts the queues.
 
@@ -180,8 +180,8 @@ src/
   lib/share.ts, export.ts   links to a view, CSV of the network
   lib/map-nav.ts            keyboard movement between junctions
   lib/routing.ts            OSRM client, junctions along a route, delay on a trip
-  lib/demo-engine.ts        the in-browser world used in demo mode
-  lib/traffic-data.ts       data access, demo or Supabase
+  lib/sim-engine.ts        the in-browser world used in simulated mode
+  lib/traffic-data.ts       data access, simulated or Supabase
   lib/traffic.functions.ts  server functions for live mode
   lib/control-auth.ts       the secret check for the scheduled control endpoint
   routes/api/control.ts     POST /api/control, called by a scheduler to run the loop
@@ -218,7 +218,7 @@ pauses when the canvas is off screen.
 
 ## Setting up your own Supabase project (live mode)
 
-Demo mode needs none of this.
+Simulated mode needs none of this.
 
 1. Create a project at supabase.com.
 2. In the SQL editor, paste and run `supabase/setup.sql` once. It creates the schema, the

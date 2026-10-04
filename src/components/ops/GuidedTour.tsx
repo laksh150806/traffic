@@ -1,6 +1,6 @@
 import { Play, Square } from "lucide-react";
 import { AnimatedNumber } from "@/components/space/AnimatedNumber";
-import type { Caption } from "@/components/ops/useDemoTour";
+import type { Caption } from "@/components/ops/useGuidedTour";
 
 export function TourCaption({ caption, onStop }: { caption: Caption; onStop: () => void }) {
   return (
@@ -41,7 +41,7 @@ export function TourCaption({ caption, onStop }: { caption: Caption; onStop: () 
         <button
           type="button"
           onClick={onStop}
-          aria-label="Stop the demo"
+          aria-label="Stop the tour"
           className="glass-chip flex h-9 w-9 shrink-0 items-center justify-center text-muted-foreground hover:text-foreground"
         >
           <Square className="h-3.5 w-3.5" aria-hidden />
@@ -57,7 +57,7 @@ export function TourCaption({ caption, onStop }: { caption: Caption; onStop: () 
   );
 }
 
-/** Offered on the map when everything is flowing, which is the least exciting moment to demo. */
+/** Offered on the map when everything is flowing, which is the least exciting moment to show the map. */
 export function TourInvite({ onStart }: { onStart: () => void }) {
   return (
     <button

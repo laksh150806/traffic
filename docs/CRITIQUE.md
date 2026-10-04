@@ -1,4 +1,4 @@
-# Adversarial review: Smart Traffic Management (branch `feature/ops-map-demo-mode`)
+# Adversarial review: Smart Traffic Management
 
 Reviewer scope: whole repo at HEAD `2c3ccbf` (4 commits on `main`), compared with `git diff main...HEAD`
 where useful. Read-only review; nothing in the project was edited except this file.
@@ -116,9 +116,9 @@ has no race; forecast level class agrees with the live simulator (59/69 junction
 
 ### C1. The phase controller starves approaches for tens of minutes; the model's "cycle" and "predicted wait" describe a controller that does not exist
 
-- Where: `src/lib/sim-core.ts:114-117` (`approachPressure`), `:140-169` (`decidePhase`, tie-break at `:151`); consumed by `demo-engine.ts:380-418` and `traffic.functions.ts:445-527`.
+- Where: `src/lib/sim-core.ts:114-117` (`approachPressure`), `:140-169` (`decidePhase`, tie-break at `:151`); consumed by `sim-engine.ts:380-418` and `traffic.functions.ts:445-527`.
 - Problem: pressure is `degreeSaturation + queueNow/200`. Degree of saturation is a rate property that does not fall when an approach is served, and the queue term is capped at 0.75 (queue cap 150). A light approach with a large backlog therefore loses the "highest pressure" contest to approaches with empty queues and a higher DS, indefinitely. There is no max-red, aging or fixed phase order. Ties go to the lowest road id (North).
-- Measured (demo engine, 150 ticks = 30 simulated minutes, separate process per mode):
+- Measured (simulation engine, 150 ticks = 30 simulated minutes, separate process per mode):
   - default `auto` mode (what a user gets at 9 pm IST): 51 of 276 approaches had a red longer than 300 s, the longest 1696 s; 48 of 69 junctions have a max/min green-time ratio above 3 (worst 50.7).
   - `night`: longest red 662 s, ratio up to 17.5, 41/69 junctions above 3. `rush`: longest red 346 s.
   - Concrete case, `auto`: Thiruninravur Junction NORTH held green 12 s out of 1800 s while its queue grew 62 to 102 vehicles. At t=1798 s its pressure was 0.68 against 0.69 / 0.69 / 0.70 for E / S / W, whose queues were 0, 1 and 3. The panel shows for that approach: arrival 60 vph, DS 0.17, "cycle 62 s", predicted wait 21.9 s. Phase order printed over the run: `WESEWSWSESWEWSEWESWESWES...` (N never appears again). Tambaram shows `ENWNENWNENWENEWN...` (S starved).
@@ -129,7 +129,7 @@ has no race; forecast level class agrees with the live simulator (59/69 junction
 
 ### C2. "Vehicle waiting avoided" is inflated 5x to 40x and counts only wins
 
-- Where: `demo-engine.ts:331-332` (`Math.max(0, approach.savedVehicleSeconds)`, `w.savedTotalSec += saved`); `traffic.functions.ts:294`; `traffic-model.ts:181,202`; shown by `CycleChart.tsx:43` and `:15-19` (`formatSaved`).
+- Where: `sim-engine.ts:331-332` (`Math.max(0, approach.savedVehicleSeconds)`, `w.savedTotalSec += saved`); `traffic.functions.ts:294`; `traffic-model.ts:181,202`; shown by `CycleChart.tsx:43` and `:15-19` (`formatSaved`).
 - Problem, three stacked errors:
   1. `savedVehicleSeconds = (delayFixed - delayAdaptive) * arrivalsPerCycle`, where `arrivalsPerCycle` uses the model cycle (60 to 150 s). It is added once per control tick (every 12 s). A whole cycle's saving is therefore credited every 12 s (5x at a 60 s cycle, 12.5x at 150 s).
   2. Negative savings are clamped to zero before summing, so every approach where adaptive is predicted worse contributes nothing, while winners are counted in full.
@@ -217,9 +217,9 @@ has no race; forecast level class agrees with the live simulator (59/69 junction
 
 ### H9. Tests cover easy facts, miss the invariants that fail, and several cannot fail
 
-- Where: `demo-engine.test.ts:110-114` ("accumulates avoided waiting as it ticks": `toBeGreaterThanOrEqual(before)` is always true because the total is monotone; also runs on a different clock from the other tests, `Date.now()+30000` vs the module's simulated `clock`), `forecast.test.ts:37-41` (adaptive never worse than fixed, only at 3 am; the peak case that fails 31/69 is untested), `traffic-model.test.ts:65-83` (bounded, not monotone; limits tested but not `sum(green)+lost == cycle`), `routing.test.ts:138` (asserts `formatMinutes(30) == "1 min"`, cementing M4).
+- Where: `sim-engine.test.ts:110-114` ("accumulates avoided waiting as it ticks": `toBeGreaterThanOrEqual(before)` is always true because the total is monotone; also runs on a different clock from the other tests, `Date.now()+30000` vs the module's simulated `clock`), `forecast.test.ts:37-41` (adaptive never worse than fixed, only at 3 am; the peak case that fails 31/69 is untested), `traffic-model.test.ts:65-83` (bounded, not monotone; limits tested but not `sum(green)+lost == cycle`), `routing.test.ts:138` (asserts `formatMinutes(30) == "1 min"`, cementing M4).
 - Missing: monotonicity of delay in demand/green, cycle/green consistency, controller fairness (C1), saved-total plausibility (C2), `traffic-aggregate.ts` (aggregate/performance), `searchJunctions`, `TimeBar.minutesUntil`, `levelFor` and `timeOfDayFactor` boundaries (8:00, 10:00, 17:00, 20:00, 23:00) and midnight wrap, `traffic.functions.ts` and the Supabase branch of `traffic-data.ts` (zero coverage; vitest runs in `environment: node` and `include` is only `src/**/*.test.ts`, so no `.tsx` component test can exist), seed-vs-SQL equality (only count and unique ids are checked).
-- Flakiness: demo-engine tests share a module-level `world` and `scenario` singleton and depend on file order; the simulator uses unseeded `Math.random`; one test mixes `Date.now()` and a simulated clock. They are stable today because thresholds are loose (night: DS never above 0.2), not because they are deterministic.
+- Flakiness: sim-engine tests share a module-level `world` and `scenario` singleton and depend on file order; the simulator uses unseeded `Math.random`; one test mixes `Date.now()` and a simulated clock. They are stable today because thresholds are loose (night: DS never above 0.2), not because they are deterministic.
 - Confidence: confirmed.
 
 ### H10. Panels in the same view disagree: forecast-based vs live, and the forecast ignores the scenario and misapplies incidents
@@ -275,27 +275,27 @@ has no race; forecast level class agrees with the live simulator (59/69 junction
 
 ### M6. No amber/all-red, and the simulator has no lost time while the model charges 4 s per phase
 
-- Where: `sim-core.ts:94-97`, `demo-engine.ts:380-418`, `traffic-model.ts:25,144`.
+- Where: `sim-core.ts:94-97`, `sim-engine.ts:380-418`, `traffic-model.ts:25,144`.
 - Problem: phases hand over instantly (A green -> B green in the same step); the queue simulation discharges at full saturation flow for the whole window. The delay formulas assume 16 s of lost time per cycle. The two halves of the system disagree on capacity by 10 to 25 percent at short cycles. No clearance interval is also not something a signal controller may do.
 - Fix: add an all-red/amber phase (3 to 6 s) in `decidePhase` and in the discharge accounting.
 - Confidence: confirmed.
 
 ### M7. "Queue forecast accuracy" is circular and trivially high at night
 
-- Where: `demo-engine.ts:255-264,301-308`, `ModelPanel.tsx:82-89`.
+- Where: `sim-engine.ts:255-264,301-308`, `ModelPanel.tsx:82-89`.
 - Problem: the prediction is scored against a simulator built from the same equations, and `dischargeNext` assumes the highest-DS approach gets the next green (`:287-294`) although the real controller picks otherwise (C1). At night queues are about zero, so 99.3 percent of predictions fall within 3 vehicles (measured hit rate 0.993 night, 0.70 rush, MAE 0.52 / 2.37). No persistence baseline ("queue stays as is") is shown, so the number carries no information.
 - Confidence: confirmed.
 
 ### M8. Junction colour uses the mean DS only, so huge queues can be "Free flowing"
 
-- Where: `sim-core.ts:19-23`, `demo-engine.ts:441-452`, `migration 20260910145231...sql:23-32`.
+- Where: `sim-core.ts:19-23`, `sim-engine.ts:441-452`, `migration 20260910145231...sql:23-32`.
 - Scenario: C1's junction (one arm 102 vehicles, others 0 to 3) is mean DS 0.56 -> LOW. The "Needs attention" list ranks by that level first.
 - Fix: use max DS or add a queue-based override.
 - Confidence: confirmed.
 
 ### M9. "Block a lane" is modelled as demand x2.6 on all four approaches, not as lost capacity on one
 
-- Where: `demo-engine.ts:181-189,248`, `index.tsx:139` (separate copy of 2.6 for the forecast: they can drift).
+- Where: `sim-engine.ts:181-189,248`, `index.tsx:139` (separate copy of 2.6 for the forecast: they can drift).
 - Fix: reduce `saturationFlow` for one approach; share the constant.
 - Confidence: confirmed.
 
@@ -325,7 +325,7 @@ has no race; forecast level class agrees with the live simulator (59/69 junction
 
 ### M14. Simulated-data disclosure is missing in places
 
-- Where: `DashboardHeader.tsx:71` (`hidden ... sm:flex`: the "Demo data" chip, its tooltip and the "Updated" text do not exist below 640 px), `CctvPanel.tsx:26,31` ("Live feed", red "LIVE" chip, no "simulated"), `CameraWall.tsx:207` ("exactly the count feeding the signal model" while the CCTV panel uses a separate noisy 0.88-1.12 count), `CameraWall.tsx` prints "frame N" and "% confidence" for an SVG drawn from `queue`.
+- Where: `DashboardHeader.tsx:71` (`hidden ... sm:flex`: the "Simulated data" chip, its tooltip and the "Updated" text do not exist below 640 px), `CctvPanel.tsx:26,31` ("Live feed", red "LIVE" chip, no "simulated"), `CameraWall.tsx:207` ("exactly the count feeding the signal model" while the CCTV panel uses a separate noisy 0.88-1.12 count), `CameraWall.tsx` prints "frame N" and "% confidence" for an SVG drawn from `queue`.
 - DESIGN.md's rule "the UI says so" therefore fails on phones and in the CCTV panel. The root `<title>`/description (`__root.tsx:81-85`) still advertise "CCTV detection".
 - Confidence: confirmed.
 
@@ -367,7 +367,7 @@ has no race; forecast level class agrees with the live simulator (59/69 junction
 ### M20. Migrations are not idempotent and are coupled to serial ids; seeds only "mirror" loosely
 
 - Where: migration 1 lines 121-147, migration 2 lines 3 and 71-107.
-- Problems: re-running `INSERT INTO junctions` duplicates all rows (no `UNIQUE(name)`); `UPDATE ... WHERE junction_id BETWEEN 1 AND 5` and the road-id numbering assume a fresh sequence and the planner emitting the `CROSS JOIN` in (junction, direction) order (not guaranteed without `ORDER BY`; the demo, `roadIdFor` and the per-road load personality `loadFor(roadId)` all depend on it); migration 1 seeds counts as `20+(road_id*13)%55` but migration 2 uses `abs(hashtext(...))%55`, so the initial counts differ from `demo-engine.ts:130` for roads above 20 while `seed-junctions.ts:1` claims they mirror each other; seeded `signal_history` rows carry invented `estimated_wait_saved_sec` and `baseline_fixed_sec = 30` (the app uses 26); `model_road_state.cycle_length_sec DEFAULT 120`, `saturation_flow_vph DEFAULT 1800` are unrelated defaults. `supabase/config.toml` and `.env` still point at the original project, so `supabase db push` targets someone else's project.
+- Problems: re-running `INSERT INTO junctions` duplicates all rows (no `UNIQUE(name)`); `UPDATE ... WHERE junction_id BETWEEN 1 AND 5` and the road-id numbering assume a fresh sequence and the planner emitting the `CROSS JOIN` in (junction, direction) order (not guaranteed without `ORDER BY`; the demo, `roadIdFor` and the per-road load personality `loadFor(roadId)` all depend on it); migration 1 seeds counts as `20+(road_id*13)%55` but migration 2 uses `abs(hashtext(...))%55`, so the initial counts differ from `sim-engine.ts:130` for roads above 20 while `seed-junctions.ts:1` claims they mirror each other; seeded `signal_history` rows carry invented `estimated_wait_saved_sec` and `baseline_fixed_sec = 30` (the app uses 26); `model_road_state.cycle_length_sec DEFAULT 120`, `saturation_flow_vph DEFAULT 1800` are unrelated defaults. `supabase/config.toml` and `.env` still point at the original project, so `supabase db push` targets someone else's project.
 - Confidence: confirmed (idempotency, mismatch), speculative (planner ordering).
 
 ### M21. `max_capacity` means two different things
@@ -385,7 +385,7 @@ has no race; forecast level class agrees with the live simulator (59/69 junction
 ### M23. Bundle and dependency hygiene
 
 - `zod`, `date-fns` and `@hookform/resolvers` are not imported anywhere; 34 more packages (`@radix-ui/*`, `cmdk`, `vaul`, `embla`, `react-day-picker`, `react-hook-form`, `input-otp`, `sonner`, `react-resizable-panels`, `class-variance-authority`) are used only by 44 of 46 `src/components/ui/*` files that nothing imports (only `input.tsx` and `skeleton.tsx` are used; `sidebar.tsx` alone is 744 lines). They are typechecked on every run and bloat install and lockfile (293 KB).
-- `dist` (measured, gzip): `index` 173 KB + `routes` 180 KB (includes Recharts and the Supabase client even in demo mode, plus the demo engine in live mode) before lazy chunks `JunctionHologram` 245 KB (three + drei for one OrbitControls scene) and `OpsMap` 46 KB. The charts are not lazy-loaded.
+- `dist` (measured, gzip): `index` 173 KB + `routes` 180 KB (includes Recharts and the Supabase client even in simulated mode, plus the simulation engine in live mode) before lazy chunks `JunctionHologram` 245 KB (three + drei for one OrbitControls scene) and `OpsMap` 46 KB. The charts are not lazy-loaded.
 - Confidence: confirmed.
 
 ### M24. Docs and comments contradict the code
@@ -401,13 +401,13 @@ has no race; forecast level class agrees with the live simulator (59/69 junction
 - **L2. `vite.config.ts` `preview.allowedHosts: true`** disables the host check on the preview server (DNS-rebinding exposure on a dev machine).
 - **L3. Third-party calls and privacy.** Every route request sends the start/end coordinates and the user's IP to `router.project-osrm.org` (demo server, "not for production use", rate-limited), and tiles go to `{s}.tile.openstreetmap.org` (`OpsMap.tsx:126`; OSM's tile policy discourages the `{s}` subdomains and asks for an attribution link, while `OpsMap.tsx:127` is plain text `"&copy; OpenStreetMap contributors"` without a link to the copyright page). There is no timeout on `fetchOsrmRoutes` (`routing.ts:175-191`), so a hung request leaves "Finding roads" until the user changes an endpoint. The OSRM error text "could not be reached" (`DirectionsPanel.tsx:131`) is also shown for "NoRoute" and HTTP 429. Google Fonts CSS is render-blocking and third-party (`__root.tsx:100-105`).
 - **L4. `decidePhase` freezes on a backward clock step.** `sim-core.ts:143` has no guard for `elapsed < 0`; if the system clock moves back N minutes, every junction holds its phase for N minutes. (My own harness hit this when reusing a process across scenarios.) Clamp `elapsed` at 0 and treat negative as "served".
-- **L5. Duplicated logic and constants.** `istDate` re-implemented inline at `PlaceCard.tsx:125`; `INCIDENT_BOOST` duplicated (M9); N,S,E,W order in `demo-engine.ts:36` vs N,E,S,W in `traffic-aggregate.ts:7`; `aggregateCycleRows` defaults `baseline_fixed_sec` to 30 (`traffic-aggregate.ts:37`) while `FIXED_GREEN` is 26 and the DB default is 30.
+- **L5. Duplicated logic and constants.** `istDate` re-implemented inline at `PlaceCard.tsx:125`; `INCIDENT_BOOST` duplicated (M9); N,S,E,W order in `sim-engine.ts:36` vs N,E,S,W in `traffic-aggregate.ts:7`; `aggregateCycleRows` defaults `baseline_fixed_sec` to 30 (`traffic-aggregate.ts:37`) while `FIXED_GREEN` is 26 and the DB default is 30.
 - **L6. `PlaceCard` "Busiest around"** (`:75-77,125`) takes the first hour of a three-hour plateau (5 pm) while the "Evening peak" shortcut jumps to 6:30 pm. `Attention.tsx` always lists six rows under "Needs attention" even when all are "Flowing". `Attention`'s `onSelect={setSelectedId}` ignores pick mode.
 - **L7. Hologram cosmetics.** 18 cars at 0.34 spacing reach z = 3.54, beyond the 3.1 road arm and 3.3 ground disc (`JunctionHologram.tsx:21-24,172-180`); label textures are drawn before the Manrope font loads and never redrawn; R3F logs `THREE.Clock ... deprecated` warnings on each canvas mount.
 - **L8. `GlCanvas` never recovers** once `failed` is set (context loss, slow GPU): no retry when roads change or the tab becomes visible again; an interval window that spans a hidden period can count as "slow" once (needs 3 in a row, so low risk).
 - **L9. Tooling.** CI (`.github/workflows/build.yml`) runs typecheck, test and build but not lint, and not on feature-branch pushes; `tsconfig.json` does not include `vitest.config.ts`; `vitest` warns that `vite-tsconfig-paths` is redundant; `optimizeDeps.include` is a hand-maintained list (`vite.config.ts:17-30`); `og:image` is missing while `twitter:card` is `summary_large_image` (`index.tsx:66`).
 - **L10. Minor semantics.** `traffic.functions.ts:526` `switched` counts rows; `RoadList` shows a constant "ADAPTIVE" badge; `timing_mode` is never anything else; the header's "Updated Ns ago" only refreshes when the dashboard re-renders; ModelPanel's "Discharge" column is saturation flow, "Predicted congestion drop" is delay reduction; `cycle_number` increments per 12 s tick, so the chart's "Cycle #N" is not a signal cycle.
-- **L11. CCTV chart x-axis** plots `frame_number` of up to four cameras on one category axis (`CctvPanel.tsx:52`; `demoFetchCctvFeed`, `demo-engine.ts:519-532`), so tick labels such as `f5 f3 f7` are non-monotone.
+- **L11. CCTV chart x-axis** plots `frame_number` of up to four cameras on one category axis (`CctvPanel.tsx:52`; `simFetchCctvFeed`, `sim-engine.ts:519-532`), so tick labels such as `f5 f3 f7` are non-monotone.
 - **L12. RLS** is `USING (true)` for anon on all nine tables and the view. Fine for simulated data; revisit if real sensor data or operator tables are added. `GRANT ALL ... TO service_role` is redundant for a role that bypasses RLS.
 
 ---
@@ -436,4 +436,4 @@ has no race; forecast level class agrees with the live simulator (59/69 junction
 7. **H10** Make PlaceCard/Attention/Directions use the same source (live vs forecast) as the map, and make the forecast aware of scenario mode and incident expiry.
 8. **H7/H8** Fix the schema before the rubric work: composite FK or drop `junction_id` duplicates, one-green partial unique index, CHECK/enum constraints, incidents/audit tables, DB-side retention; decide what moves into PL/pgSQL.
 9. **H3/H4/H5** Before anyone runs live mode: authenticate the two server functions, check write errors, remove the invented fallback junctions and show a real error state.
-10. **M1/M2/M3/M4** The four small UX bugs a demo audience will hit: pick-mode overwrites the junction with a pin, forecast time drifts, route selection jumps, "1 min at 0 signals".
+10. **M1/M2/M3/M4** The four small UX bugs an audience will hit: pick-mode overwrites the junction with a pin, forecast time drifts, route selection jumps, "1 min at 0 signals".

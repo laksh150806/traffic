@@ -58,7 +58,7 @@ const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(re
  * same controls a person would (time bar, selection, trip planner), so what is shown is real
  * behaviour of the model, only played back quickly.
  */
-export function useDemoTour(controls: TourControls) {
+export function useGuidedTour(controls: TourControls) {
   const [caption, setCaption] = useState<Caption | null>(null);
   const token = useRef({ cancelled: false });
   const live = useRef(controls);

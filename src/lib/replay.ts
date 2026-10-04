@@ -120,7 +120,7 @@ export function replayJunction(
   const fixedGreens = plan?.greens ?? Array.from({ length: 4 }, () => FIXED_GREEN);
   const blockedRoad = options.blocked ? incidentRoadId(junctionIndex) : null;
 
-  // Starting queues: what this junction settles to at this hour, the same start the demo uses.
+  // Starting queues: what this junction settles to at this hour, the same start the simulation uses.
   const start = forecastJunction(junctionIndex, new Date(startMs), {
     ...(options.factor === undefined ? {} : { factor: options.factor }),
     ...(options.blocked ? { incidents: new Set([seed.id]) } : {}),

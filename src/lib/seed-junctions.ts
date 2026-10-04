@@ -1,4 +1,4 @@
-/** Junction seed, mirrors supabase/migrations so the demo engine and the database agree. */
+/** Junction seed, mirrors supabase/migrations so the simulation engine and the database agree. */
 export type SeedJunction = {
   id: number;
   name: string;

@@ -138,7 +138,7 @@ function seededRandom(seed: number) {
  * Start the simulation again from scratch. With a seed the random noise is repeatable;
  * without one it is ordinary randomness. Mostly for tests.
  */
-export function resetDemoEngine(seed?: number) {
+export function resetSimEngine(seed?: number) {
   world = null;
   scenario.mode = "auto";
   scenario.incidents.clear();
@@ -525,13 +525,13 @@ function runAdvance(w: World, nowMs: number): number {
   return switched;
 }
 
-export function demoTick(nowMs = Date.now()) {
+export function simTick(nowMs = Date.now()) {
   const w = ensureWorld();
   runTick(w, nowMs);
   return { ok: true, cycles: w.roadsByJunction.size, at: new Date(nowMs).toISOString() };
 }
 
-export function demoAdvance(nowMs = Date.now()) {
+export function simAdvance(nowMs = Date.now()) {
   const w = ensureWorld();
   return { ok: true, switched: runAdvance(w, nowMs) };
 }
@@ -540,7 +540,7 @@ export function demoAdvance(nowMs = Date.now()) {
 // Reads (same shapes the Supabase data layer returns)
 // ---------------------------------------------------------------------------
 
-export function demoFetchJunctions(): JunctionSummary[] {
+export function simFetchJunctions(): JunctionSummary[] {
   const w = ensureWorld();
   return SEED_JUNCTIONS.map((junction) => {
     const roads = w.roadsByJunction.get(junction.id) ?? [];
@@ -564,7 +564,7 @@ export function demoFetchJunctions(): JunctionSummary[] {
   });
 }
 
-export function demoFetchRoadStates(junctionId: number): RoadState[] {
+export function simFetchRoadStates(junctionId: number): RoadState[] {
   const w = ensureWorld();
   return (w.roadsByJunction.get(junctionId) ?? [])
     .map((road) => {
@@ -586,12 +586,12 @@ export function demoFetchRoadStates(junctionId: number): RoadState[] {
     .sort((a, b) => directionRank(a.direction) - directionRank(b.direction));
 }
 
-export function demoFetchCycleComparison(junctionId: number): CyclePoint[] {
+export function simFetchCycleComparison(junctionId: number): CyclePoint[] {
   const w = ensureWorld();
   return aggregateCycleRows(w.history.get(junctionId) ?? []);
 }
 
-export function demoFetchJunctionModel(junctionId: number): ApproachModelState[] {
+export function simFetchJunctionModel(junctionId: number): ApproachModelState[] {
   const w = ensureWorld();
   const out: ApproachModelState[] = [];
   for (const road of w.roadsByJunction.get(junctionId) ?? []) {
@@ -615,7 +615,7 @@ export function demoFetchJunctionModel(junctionId: number): ApproachModelState[]
   return out.sort((a, b) => directionRank(a.direction) - directionRank(b.direction));
 }
 
-export function demoFetchModelPerformance(): ModelPerformance {
+export function simFetchModelPerformance(): ModelPerformance {
   const w = ensureWorld();
   const states = w.roads.flatMap((r) => {
     const model = w.sim.get(r.roadId)?.model;
@@ -625,7 +625,7 @@ export function demoFetchModelPerformance(): ModelPerformance {
 }
 
 /** Modelled waiting avoided over the last hour (or since the engine started, if shorter). */
-export function demoFetchTotalSecondsSaved(): ModelledSaving {
+export function simFetchTotalSecondsSaved(): ModelledSaving {
   const w = ensureWorld();
   const oldest = w.savedLog[0]?.atMs ?? w.lastTickMs;
   const spanMin = (w.lastTickMs - oldest) / 60_000 + NOMINAL_TICK_SEC / 60;
@@ -635,7 +635,7 @@ export function demoFetchTotalSecondsSaved(): ModelledSaving {
   };
 }
 
-export function demoFetchCctvFeed(junctionId: number): CctvPoint[] {
+export function simFetchCctvFeed(junctionId: number): CctvPoint[] {
   const w = ensureWorld();
   const roads = new Map((w.roadsByJunction.get(junctionId) ?? []).map((r) => [r.roadId, r]));
   return w.cctv
@@ -650,7 +650,7 @@ export function demoFetchCctvFeed(junctionId: number): CctvPoint[] {
     }));
 }
 
-export function demoFetchCameraTiles(junctionId: number): CameraTile[] {
+export function simFetchCameraTiles(junctionId: number): CameraTile[] {
   const w = ensureWorld();
   return (w.roadsByJunction.get(junctionId) ?? [])
     .map((road) => {

@@ -11,7 +11,7 @@ import { SEED_JUNCTIONS } from "@/lib/seed-junctions";
 import { APPROACHES_PER_JUNCTION, MEAN_DAY_FACTOR, approachDemandVph } from "@/lib/sim-core";
 import { fixedPlanFromDemand, saturationFlow, type SignalPlan } from "@/lib/traffic-model";
 
-/** Road ids follow the order the demo engine (and the seed migration) number them in. */
+/** Road ids follow the order the simulation engine (and the seed migration) number them in. */
 export function roadIdFor(junctionIndex: number, approachIndex: number) {
   return junctionIndex * APPROACHES_PER_JUNCTION + approachIndex + 1;
 }

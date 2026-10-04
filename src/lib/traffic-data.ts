@@ -1,6 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { DATA_MODE } from "@/lib/data-mode";
-import * as demo from "@/lib/demo-engine";
+import * as engine from "@/lib/sim-engine";
 import {
   aggregateCycleRows,
   computeModelPerformance,
@@ -32,10 +32,10 @@ export type {
   RoadState,
 } from "@/lib/traffic-types";
 
-const isDemo = DATA_MODE === "demo";
+const isSimulated = DATA_MODE === "simulated";
 
 export async function fetchJunctions(): Promise<JunctionSummary[]> {
-  if (isDemo) return demo.demoFetchJunctions();
+  if (isSimulated) return engine.simFetchJunctions();
   const { data, error } = await supabase
     .from("v_junction_congestion")
     .select("*")
@@ -55,7 +55,7 @@ export async function fetchJunctions(): Promise<JunctionSummary[]> {
 }
 
 export async function fetchRoadStates(junctionId: number): Promise<RoadState[]> {
-  if (isDemo) return demo.demoFetchRoadStates(junctionId);
+  if (isSimulated) return engine.simFetchRoadStates(junctionId);
   const { data: roads, error } = await supabase
     .from("roads")
     .select("road_id, direction, road_name, max_capacity")
@@ -112,7 +112,7 @@ export async function fetchRoadStates(junctionId: number): Promise<RoadState[]> 
 }
 
 export async function fetchCycleComparison(junctionId: number): Promise<CyclePoint[]> {
-  if (isDemo) return demo.demoFetchCycleComparison(junctionId);
+  if (isSimulated) return engine.simFetchCycleComparison(junctionId);
   const { data, error } = await supabase
     .from("signal_history")
     .select(
@@ -127,7 +127,7 @@ export async function fetchCycleComparison(junctionId: number): Promise<CyclePoi
 }
 
 export async function fetchJunctionModel(junctionId: number): Promise<ApproachModelState[]> {
-  if (isDemo) return demo.demoFetchJunctionModel(junctionId);
+  if (isSimulated) return engine.simFetchJunctionModel(junctionId);
   const [{ data: roads }, { data: state, error }] = await Promise.all([
     supabase.from("roads").select("road_id, direction").eq("junction_id", junctionId),
     supabase.from("model_road_state").select("*").eq("junction_id", junctionId),
@@ -159,7 +159,7 @@ export async function fetchJunctionModel(junctionId: number): Promise<ApproachMo
 }
 
 export async function fetchModelPerformance(): Promise<ModelPerformance> {
-  if (isDemo) return demo.demoFetchModelPerformance();
+  if (isSimulated) return engine.simFetchModelPerformance();
   const [{ data: accuracy }, { data: state }] = await Promise.all([
     supabase
       .from("model_accuracy")
@@ -188,7 +188,7 @@ export async function fetchModelPerformance(): Promise<ModelPerformance> {
 
 /** Modelled waiting avoided over the last hour, summed across the network (signed). */
 export async function fetchTotalSecondsSaved(): Promise<ModelledSaving> {
-  if (isDemo) return demo.demoFetchTotalSecondsSaved();
+  if (isSimulated) return engine.simFetchTotalSecondsSaved();
   const { data, error } = await supabase
     .from("v_modelled_saving")
     .select("seconds, window_min")
@@ -201,7 +201,7 @@ export async function fetchTotalSecondsSaved(): Promise<ModelledSaving> {
 }
 
 export async function fetchCctvFeed(junctionId: number): Promise<CctvPoint[]> {
-  if (isDemo) return demo.demoFetchCctvFeed(junctionId);
+  if (isSimulated) return engine.simFetchCctvFeed(junctionId);
   const { data: roads } = await supabase
     .from("roads")
     .select("road_id")
@@ -246,7 +246,7 @@ export async function fetchCctvFeed(junctionId: number): Promise<CctvPoint[]> {
  * analysed frame, used to render the camera wall.
  */
 export async function fetchCameraTiles(junctionId: number): Promise<CameraTile[]> {
-  if (isDemo) return demo.demoFetchCameraTiles(junctionId);
+  if (isSimulated) return engine.simFetchCameraTiles(junctionId);
   const { data: roads } = await supabase
     .from("roads")
     .select("road_id, direction, road_name")
