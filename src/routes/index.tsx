@@ -25,7 +25,7 @@ import {
 
 import { DashboardHeader } from "@/components/traffic/DashboardHeader";
 import { JunctionList } from "@/components/traffic/JunctionList";
-import { RoadList } from "@/components/traffic/RoadList";
+import { RoadList, type RoadControls } from "@/components/traffic/RoadList";
 import { CycleChart } from "@/components/traffic/CycleChart";
 import { CctvPanel } from "@/components/traffic/CctvPanel";
 import { CameraWall } from "@/components/traffic/CameraWall";
@@ -33,6 +33,14 @@ import { ModelPanel } from "@/components/traffic/ModelPanel";
 import { ScenarioPanel } from "@/components/traffic/ScenarioPanel";
 import { Attention } from "@/components/ops/Attention";
 import { DirectionsPanel } from "@/components/ops/DirectionsPanel";
+import { CityBoard, type BoardStat } from "@/components/ops/CityBoard";
+import { GreenWavePanel } from "@/components/ops/GreenWavePanel";
+import { PriorityRunPanel } from "@/components/ops/PriorityRunPanel";
+import {
+  nearestHospital,
+  useEngineActivity,
+  usePriorityRunLauncher,
+} from "@/components/ops/usePriorityRuns";
 import { CommandPalette, type PaletteAction } from "@/components/ops/CommandPalette";
 import { TourCaption, TourInvite } from "@/components/ops/GuidedTour";
 import { useGuidedTour } from "@/components/ops/useGuidedTour";
@@ -45,10 +53,13 @@ import { decodeView, encodeView } from "@/lib/share";
 import { SearchBox } from "@/components/ops/SearchBox";
 import { TimeBar } from "@/components/ops/TimeBar";
 import { useDirections, type Pricing } from "@/components/ops/useDirections";
-import { AnimatedNumber } from "@/components/space/AnimatedNumber";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BROWSER_DRIVES_LOOP, DATA_MODE } from "@/lib/data-mode";
 import {
+  clearOperatorOverride,
+  clearRoadIncident,
+  reportRoadIncident,
+  setOperatorOverride,
   simAdvance,
   simTick,
   getIncidentEnds,
@@ -189,6 +200,8 @@ function Dashboard() {
   const [inviteDismissed, setInviteDismissed] = useState(false);
   const running = useRef(false);
   const advancing = useRef(false);
+  const activity = useEngineActivity(isSimulated);
+  const launcher = usePriorityRunLauncher();
 
   useEffect(() => {
     const id = window.setInterval(() => setClock(new Date()), 30_000);
@@ -594,7 +607,7 @@ function Dashboard() {
     };
   })();
 
-  const stats = [
+  const stats: BoardStat[] = [
     { label: "Junctions jammed", value: jammed, suffix: "", icon: Gauge, note: null },
     {
       label: "Junctions watched",
@@ -615,6 +628,36 @@ function Dashboard() {
           : "Predicted no worse at any junction",
     },
   ];
+
+  // What an operator can do at the selected junction. Each action is applied at once instead of
+  // waiting for the next 2-second step, then the panels are asked to refresh.
+  const roadControls = useMemo<RoadControls | undefined>(() => {
+    if (!isSimulated || !isLive || activeId === null) return undefined;
+    const apply = () => {
+      simAdvance();
+      void queryClient.invalidateQueries({ queryKey: ["roads"] });
+    };
+    return {
+      override: activity.overrides.find((o) => o.junctionId === activeId) ?? null,
+      incidents: new Map(activity.incidents.map((i) => [i.roadId, i])),
+      onGive: (roadId) => {
+        setOperatorOverride(activeId, roadId);
+        apply();
+      },
+      onRelease: () => {
+        clearOperatorOverride(activeId);
+        apply();
+      },
+      onReport: (roadId, kind) => {
+        reportRoadIncident(roadId, kind);
+        refreshAll();
+      },
+      onClearReport: (roadId) => {
+        clearRoadIncident(roadId);
+        refreshAll();
+      },
+    };
+  }, [isLive, activeId, activity.overrides, activity.incidents, queryClient, refreshAll]);
 
   const tabs: Array<{ id: Tab; label: string; icon: typeof Compass }> = [
     { id: "explore", label: "Explore", icon: Compass },
@@ -638,6 +681,47 @@ function Dashboard() {
             keywords: "tour walkthrough present guided",
             run: () => void tour.start(),
           },
+        ]
+      : []),
+    ...(isSimulated
+      ? [
+          {
+            id: "ambulance",
+            label: selected ? `Send an ambulance from ${selected.name}` : "Send an ambulance",
+            keywords: "emergency hospital priority siren",
+            hint: "nearest hospital",
+            run: () => {
+              if (!selected) return;
+              setTab("explore");
+              launcher.sendAmbulance(
+                { lat: selected.latitude, lng: selected.longitude, name: selected.name },
+                nearestHospital(selected.latitude, selected.longitude),
+              );
+            },
+          },
+          ...(activity.run
+            ? [
+                {
+                  id: "cancel-run",
+                  label: `Cancel: ${activity.run.label}`,
+                  keywords: "stop emergency wave priority",
+                  run: launcher.cancel,
+                },
+              ]
+            : []),
+          ...(directions.assessments[routeIndex] && !activity.run
+            ? [
+                {
+                  id: "green-wave",
+                  label: "Run a green wave on the chosen route",
+                  keywords: "corridor progressive platoon signals timing",
+                  run: () => {
+                    const route = directions.assessments[routeIndex];
+                    if (route) launcher.startWave(route);
+                  },
+                },
+              ]
+            : []),
         ]
       : []),
     {
@@ -745,6 +829,9 @@ function Dashboard() {
                       pick={pick}
                       onPick={dropPin}
                       onChooseRoute={chooseRoute}
+                      run={activity.run}
+                      overrides={activity.overrides}
+                      incidents={activity.incidents}
                     />
                   )}
                 </Suspense>
@@ -843,31 +930,14 @@ function Dashboard() {
                 aria-labelledby="tab-explore"
                 className="space-y-3"
               >
-                <div className="grid grid-cols-2 gap-2">
-                  {stats.map((stat) => (
-                    <div key={stat.label} className="glass-inset px-3 py-2.5">
-                      <p className="meta-label flex items-center gap-1.5">
-                        <stat.icon className="h-3 w-3" aria-hidden />
-                        {stat.label}
-                      </p>
-                      {junctionsQuery.isLoading ? (
-                        <Skeleton className="mt-1 h-7 w-14" />
-                      ) : (
-                        <AnimatedNumber
-                          value={stat.value}
-                          decimals={0}
-                          suffix={stat.suffix}
-                          className="numeric mt-0.5 block text-2xl"
-                        />
-                      )}
-                      {stat.note ? (
-                        <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-                          {stat.note}
-                        </p>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
+                <CityBoard
+                  stats={stats}
+                  loading={junctionsQuery.isLoading}
+                  saved={savedQuery.data}
+                  adaptiveDelay={perf ? Math.round(perf.networkDelayAdaptive) : undefined}
+                  fixedDelay={perf ? Math.round(perf.networkDelayFixed) : undefined}
+                  {...(isSimulated ? { activity } : {})}
+                />
 
                 <Attention
                   junctions={junctions}
@@ -877,11 +947,14 @@ function Dashboard() {
                 />
 
                 {isSimulated ? (
-                  <ScenarioPanel
-                    junctionId={isLive ? activeId : null}
-                    junctionName={selected?.name ?? ""}
-                    onChange={refreshAll}
-                  />
+                  <>
+                    <PriorityRunPanel junction={selected} run={activity.run} launcher={launcher} />
+                    <ScenarioPanel
+                      junctionId={isLive ? activeId : null}
+                      junctionName={selected?.name ?? ""}
+                      onChange={refreshAll}
+                    />
+                  </>
                 ) : null}
 
                 <details className="glass-inset group">
@@ -927,6 +1000,13 @@ function Dashboard() {
                   departNow={!isForecast}
                   levelOf={levelOf}
                 />
+                {isSimulated && !isForecast ? (
+                  <GreenWavePanel
+                    route={directions.assessments[routeIndex]}
+                    run={activity.run}
+                    launcher={launcher}
+                  />
+                ) : null}
               </div>
             )}
           </div>
@@ -991,7 +1071,11 @@ function Dashboard() {
                   no public sensor feed, so the plans and predictions are real calculations on
                   simulated traffic.
                 </p>
-                <RoadList roads={roads} loading={roadsQuery.isLoading && isLive} />
+                <RoadList
+                  roads={roads}
+                  loading={roadsQuery.isLoading && isLive}
+                  {...(roadControls && !isForecast ? { controls: roadControls } : {})}
+                />
               </div>
             </section>
 

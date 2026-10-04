@@ -26,6 +26,20 @@ It works like a maps app for a traffic control room:
 - **Inspector.** The queue model's numbers for the selected junction, with a 3D junction view
   of queued vehicles and the signal heads. The heads show amber and all-red during each
   handover, which is the 4 s of lost time the model charges every phase.
+- **Operator control.** On any junction an operator can give one approach the green for a
+  minute, and report an accident or road works on an approach. A held green never cuts the running
+  green shorter than 8 s, keeps the 4 s amber and all-red, and ends by itself, so a forgotten
+  override cannot freeze a junction. A report cuts that approach's capacity until it clears.
+- **Emergency vehicle.** Send an ambulance from the selected junction to one of six hospitals. Each
+  signal on its road changes to green just before it arrives (never cutting a green shorter than
+  5 s) and returns to the controller after, and the panel counts the signals cleared, the waiting
+  an ordinary vehicle would have had there, and the vehicles held on the side roads.
+- **Green wave.** For a chosen trip, a time and distance diagram shows where a car at 40 km/h
+  would meet red with the signals as they stand, and one button runs the wave: each signal turns
+  green for the car as it arrives. Runs can be shown at real time, 4 times or 8 times faster.
+  Priority order at a junction is ambulance, then an operator's hold, then a green wave.
+- **City board.** The headline numbers, the waiting avoided in vehicle-hours, a line of the average
+  wait under the adaptive plan against a fixed timer, and a live activity feed.
 - **Scenarios.** Rush hour, overnight, heavy rain (wet roads cut capacity by a fifth) and a
   blocked lane, to watch the plan respond. Weekends have their own demand shape.
 - **For a keyboard.** Ctrl or Cmd plus K (or /) opens a palette to find a junction or run a

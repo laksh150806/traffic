@@ -13,7 +13,9 @@ import {
 import L from "leaflet";
 import { Minus, Plus } from "lucide-react";
 import { neighbourInDirection, type NavDirection } from "@/lib/map-nav";
+import { FitRun, FlagLayer, PriorityLayer } from "@/components/ops/MapOverlays";
 import type { RouteAssessment } from "@/lib/routing";
+import type { OperatorOverride, PriorityRunStatus, RoadIncident } from "@/lib/sim-engine";
 import type { JunctionSummary } from "@/lib/traffic-types";
 
 /** Canvas paths cannot read CSS variables, so these mirror the signal tokens as hex. */
@@ -40,6 +42,11 @@ type Props = {
   pick: "from" | "to" | null;
   onPick: (which: "from" | "to", point: { lat: number; lng: number }) => void;
   onChooseRoute: (index: number) => void;
+  /** An ambulance or green wave in progress, drawn with the signals clearing for it. */
+  run?: PriorityRunStatus | null;
+  /** Junctions where an operator holds a green, and reported road problems. */
+  overrides?: OperatorOverride[];
+  incidents?: RoadIncident[];
 };
 
 const prefersReducedMotion = () =>
@@ -328,6 +335,8 @@ const JunctionMarker = memo(function JunctionMarker({
   );
 });
 
+const NONE_OVERRIDES: OperatorOverride[] = [];
+const NONE_INCIDENTS: RoadIncident[] = [];
 const ROUTE_CASING = { color: "#0b1030", weight: 10, opacity: 0.9, bubblingMouseEvents: false };
 
 export default function OpsMap({
@@ -341,6 +350,9 @@ export default function OpsMap({
   pick,
   onPick,
   onChooseRoute,
+  run = null,
+  overrides = NONE_OVERRIDES,
+  incidents = NONE_INCIDENTS,
 }: Props) {
   const active = routes[routeIndex] ?? null;
   const onRoute = useMemo(() => new Set(active?.junctions.map((j) => j.junctionId)), [active]);
@@ -412,6 +424,10 @@ export default function OpsMap({
           />
         </>
       ) : null}
+
+      <FitRun run={run} />
+      {run ? <PriorityLayer run={run} /> : null}
+      <FlagLayer overrides={overrides} incidents={incidents} />
 
       {junctions.map((junction) => {
         const selected = junction.junction_id === selectedId;

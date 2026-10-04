@@ -22,6 +22,8 @@ Done
 - [x] Live-mode server functions run against the real schema in tests; authenticated,
       schedulable control endpoint and worker
 - [x] Component tests
+- [x] Operator hold and reported road problems, ambulance priority run, green wave with a
+      time and distance diagram, a city board with an activity feed
 
 Next
 

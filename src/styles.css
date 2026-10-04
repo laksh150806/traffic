@@ -331,6 +331,79 @@ div.leaflet-container {
   }
 }
 
+/* The ambulance or the green-wave car moving along its route. */
+.run-vehicle {
+  pointer-events: none;
+  transition: transform 0.42s linear;
+}
+
+.run-vehicle span {
+  position: absolute;
+  inset: 5px;
+  border-radius: 999px;
+  background: #fff;
+}
+
+.run-vehicle::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  animation: ring-out 1.2s ease-out infinite;
+}
+
+.run-ambulance::before {
+  border: 3px solid #fb4d6a;
+  box-shadow: 0 0 14px 2px #fb4d6a;
+}
+
+.run-wave::before {
+  border: 3px solid #22d3ee;
+  box-shadow: 0 0 14px 2px #22d3ee;
+}
+
+.run-ambulance span {
+  background: #fb4d6a;
+  box-shadow: 0 0 0 3px #fff;
+}
+
+.run-wave span {
+  background: #22d3ee;
+  box-shadow: 0 0 0 3px #fff;
+}
+
+/* A pin for a reported accident or road works. */
+.incident-flag span {
+  display: flex;
+  height: 24px;
+  width: 24px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px 8px 8px 2px;
+  border: 2px solid #fff;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.45);
+}
+
+.incident-accident span {
+  background: #fb4d6a;
+}
+
+.incident-works span {
+  background: #f59e0b;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .run-vehicle,
+  .run-vehicle::before {
+    animation: none;
+    transition: none;
+  }
+}
+
 /* A soft edge so the map sits inside its glass frame instead of ending at a hard line. */
 .map-vignette {
   pointer-events: none;
