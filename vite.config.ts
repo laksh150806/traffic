@@ -9,7 +9,13 @@ export default defineConfig(({ mode }) => {
   // process.env. The server functions read their settings (including the service role key,
   // which must never be VITE_-prefixed) from process.env, so load .env.local into it here.
   const env = loadEnv(mode, process.cwd(), "");
-  for (const key of ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SERVICE_ROLE_KEY"]) {
+  for (const key of [
+    "SUPABASE_URL",
+    "SUPABASE_PUBLISHABLE_KEY",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "CONTROL_CRON_SECRET",
+    "CONTROL_BROWSER_DRIVEN",
+  ]) {
     if (env[key] && !process.env[key]) process.env[key] = env[key];
   }
 

@@ -44,6 +44,15 @@ type TimingRow = {
   updated_at: string;
 };
 
+/**
+ * When a scheduled worker drives the loops (CONTROL_BROWSER_DRIVEN=false), the public endpoints
+ * below do nothing, so only a caller holding the secret can move the simulation.
+ */
+async function browserGuard<T>(run: () => Promise<T>): Promise<T | { ok: false; disabled: true }> {
+  if (process.env["CONTROL_BROWSER_DRIVEN"] === "false") return { ok: false, disabled: true };
+  return run();
+}
+
 /** Throw on a failed query instead of carrying on with half the data written. */
 function check<T extends { error: { message: string } | null }>(result: T, what: string): T {
   if (result.error) throw new Error(`${what}: ${result.error.message}`);
@@ -68,7 +77,7 @@ const chunk = <T>(rows: T[], size = 200) => {
  *
  * It never changes who holds the green: that belongs to advanceSignals().
  */
-export const runTrafficTick = createServerFn({ method: "POST" }).handler(async () => {
+export async function performTick() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
   const gate = check(
@@ -417,7 +426,11 @@ export const runTrafficTick = createServerFn({ method: "POST" }).handler(async (
   }
 
   return { ok: true, cycles: byJunction.size, at: now.toISOString() };
-});
+}
+
+export const runTrafficTick = createServerFn({ method: "POST" }).handler(async () =>
+  browserGuard(performTick),
+);
 
 // ===========================================================================
 // Real-time phase controller
@@ -442,7 +455,7 @@ type PhaseModel = {
  * All the changes go to the database in one call that applies them junction by
  * junction, so a half-applied handover cannot leave two approaches green.
  */
-export const advanceSignals = createServerFn({ method: "POST" }).handler(async () => {
+export async function performAdvance() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
   const gate = check(
@@ -522,4 +535,8 @@ export const advanceSignals = createServerFn({ method: "POST" }).handler(async (
     "phase changes",
   );
   return { ok: true, switched: Number(applied.data ?? 0), at: stamp };
-});
+}
+
+export const advanceSignals = createServerFn({ method: "POST" }).handler(async () =>
+  browserGuard(performAdvance),
+);
