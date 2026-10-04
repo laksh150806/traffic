@@ -10,6 +10,14 @@ import { fixedPlanForJunction } from "@/lib/fixed-plan";
 import { forecastJunction } from "@/lib/forecast";
 import { FIXED_GREEN, clamp, solveJunction, type ApproachInput } from "@/lib/traffic-model";
 import { cumulativeM, pointAt, type LngLat } from "@/lib/routing";
+import { weatherCapacityAt } from "@/lib/weather";
+import {
+  FREE_FLOW_CEILING_VC,
+  FREE_FLOW_RATIO,
+  volumeToCapacity,
+  type JunctionFlow,
+  type TrafficSnapshot,
+} from "@/lib/traffic-flow";
 import { RUN_SETTINGS, type RunKind, type RunStop, type SignalPlan } from "@/lib/priority-run";
 import {
   INCIDENT_CAPACITY_FACTOR,
@@ -20,6 +28,7 @@ import {
   decidePhase,
   effectiveGreenSeconds,
   incidentRoadId,
+  junctionBaselineVC,
   levelFor,
   stepQueue,
   timeOfDayFactor,
@@ -35,7 +44,6 @@ import type {
   ApproachModelState,
   CameraTile,
   CctvPoint,
-  CongestionLevel,
   CyclePoint,
   JunctionSummary,
   ModelledSaving,
@@ -148,6 +156,7 @@ export function resetSimEngine(seed?: number) {
   scenario.incidents.clear();
   operatorOverrides.clear();
   roadIncidents.clear();
+  real = null;
   events.length = 0;
   run = null;
   random = seed === undefined ? Math.random : seededRandom(seed);
@@ -218,8 +227,10 @@ function seedQueues(w: World, nowMs: number) {
   const factor = getScenarioFactor();
   const capacityScale = getScenarioCapacity();
   SEED_JUNCTIONS.forEach((junction, jIndex) => {
+    // Real traffic, when there is any, sets how heavy this junction starts out.
+    const base = factor ?? timeOfDayFactor(new Date(nowMs));
     const expected = forecastJunction(jIndex, new Date(nowMs), {
-      ...(factor === undefined ? {} : { factor }),
+      factor: base * realBoost(jIndex, junction.id, base, nowMs),
       capacityScale,
     });
     (w.roadsByJunction.get(junction.id) ?? []).forEach((road, a) => {
@@ -247,6 +258,77 @@ function ensureWorld(): World {
 }
 
 // ---------------------------------------------------------------------------
+// Real traffic
+// ---------------------------------------------------------------------------
+
+/** A reading older than this is ignored and the simulation falls back to its own demand. */
+export const REAL_TRAFFIC_FRESH_MS = 10 * 60_000;
+
+type RealTraffic = {
+  fetchedAtMs: number;
+  /** Volume over capacity each junction's roads are running at, smoothed between readings. */
+  targets: Map<number, number>;
+  flows: Map<number, JunctionFlow>;
+};
+
+let real: RealTraffic | null = null;
+
+/**
+ * Feed the engine a reading of real traffic speeds. From then on, while the scenario follows the
+ * clock, each junction's demand is set so that its volume over capacity matches what the road
+ * speeds imply, instead of following the assumed daily curve. Passing null (or a snapshot with no
+ * key behind it) goes back to the assumed curve.
+ */
+export function setRealTraffic(snapshot: TrafficSnapshot | null) {
+  if (!snapshot || !snapshot.enabled) {
+    real = null;
+    return;
+  }
+  const first = real === null;
+  const targets = new Map<number, number>();
+  for (const flow of snapshot.junctions) {
+    if (flow.ratio === null) continue;
+    const next = volumeToCapacity(flow.ratio);
+    const prior = real?.targets.get(flow.id);
+    // Half way to the new reading, so one odd reading does not jerk a junction around.
+    targets.set(flow.id, prior === undefined ? next : prior + 0.5 * (next - prior));
+  }
+  real = {
+    fetchedAtMs: snapshot.fetchedAtMs,
+    targets,
+    flows: new Map(snapshot.junctions.map((j) => [j.id, j])),
+  };
+  // The first reading arrives after the network has already been drawn from the assumed curve:
+  // move the queues to where the real traffic puts them rather than waiting for them to drift.
+  if (first && world) seedQueues(world, Date.now());
+}
+
+/** The latest real readings and whether they are recent enough to be driving the simulation. */
+export function getRealTraffic(nowMs = Date.now()) {
+  if (!real) return null;
+  return {
+    fetchedAtMs: real.fetchedAtMs,
+    fresh: nowMs - real.fetchedAtMs <= REAL_TRAFFIC_FRESH_MS && scenario.mode === "auto",
+    flows: real.flows,
+  };
+}
+
+/** How much to scale one junction's demand so it matches the real traffic, or 1 without any. */
+function realBoost(junctionIndex: number, junctionId: number, factor: number, nowMs: number) {
+  if (!real || scenario.mode !== "auto" || nowMs - real.fetchedAtMs > REAL_TRAFFIC_FRESH_MS) {
+    return 1;
+  }
+  const target = real.targets.get(junctionId);
+  if (target === undefined) return 1;
+  const base = junctionBaselineVC(junctionIndex, factor);
+  if (!(base > 0)) return 1;
+  // Free-flowing roads can only rule out heavy demand: they never make a quiet hour busier.
+  const ratio = real.flows.get(junctionId)?.ratio ?? 0;
+  if (ratio >= FREE_FLOW_RATIO) return Math.min(1, FREE_FLOW_CEILING_VC / base);
+  return clamp(target / base, 0.3, 3);
+}
+
+// ---------------------------------------------------------------------------
 // Scenario controls
 // ---------------------------------------------------------------------------
 
@@ -259,7 +341,7 @@ function demandFactor(nowMs: number) {
  * busiest arm of its junction as well.
  */
 function capacityFactorFor(road: Road, nowMs: number) {
-  let factor = getScenarioCapacity();
+  let factor = getScenarioCapacity(nowMs);
   const until = scenario.incidents.get(road.junctionId);
   if (until !== undefined) {
     if (until <= nowMs) scenario.incidents.delete(road.junctionId);
@@ -273,9 +355,19 @@ function capacityFactorFor(road: Road, nowMs: number) {
   return factor;
 }
 
-/** The capacity share a forced scenario applies to every approach (rain), or 1. */
-export function getScenarioCapacity(): number {
-  return scenario.mode === "rain" ? RAIN_CAPACITY_FACTOR : 1;
+/**
+ * The share of capacity left by the weather at a moment: the heavy-rain figure when that scenario
+ * is chosen, the real weather when the scenario follows the clock, and 1 otherwise (a forced
+ * rush hour or overnight scenario describes a made-up day, so real rain is not mixed into it).
+ */
+export function getScenarioCapacity(nowMs = Date.now()): number {
+  if (scenario.mode === "rain") return RAIN_CAPACITY_FACTOR;
+  return scenario.mode === "auto" ? weatherCapacityAt(nowMs) : 1;
+}
+
+/** The same for a moment in the future, which only real weather forecasts can speak for. */
+export function getForecastCapacity(ms: number): number {
+  return scenario.mode === "auto" ? weatherCapacityAt(ms) : 1;
 }
 
 /** Count green seconds for every approach that is currently green, up to nowMs. */
@@ -721,6 +813,7 @@ function runTick(w: World, nowMs: number) {
       elapsedSec: elapsed,
       priorExact: state.queueExact,
       greenSeconds,
+      demandBoost: realBoost(road.junctionIndex, road.junctionId, factor, nowMs),
       capacityFactor: capacityFactorFor(road, nowMs),
       rand: random,
     });

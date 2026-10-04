@@ -15,6 +15,7 @@ export default defineConfig(({ mode }) => {
     "SUPABASE_SERVICE_ROLE_KEY",
     "CONTROL_CRON_SECRET",
     "CONTROL_BROWSER_DRIVEN",
+    "TOMTOM_API_KEY",
   ]) {
     if (env[key] && !process.env[key]) process.env[key] = env[key];
   }

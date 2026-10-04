@@ -11,6 +11,9 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiControlRouteImport } from './routes/api/control'
+import { Route as ApiLiveTrafficRouteImport } from './routes/api/live-traffic'
+import { Route as ApiRouteEtaRouteImport } from './routes/api/route-eta'
+import { Route as ApiTrafficTileZXYRouteImport } from './routes/api/traffic-tile.$z.$x.$y'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -22,31 +25,74 @@ const ApiControlRoute = ApiControlRouteImport.update({
   path: '/api/control',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiLiveTrafficRoute = ApiLiveTrafficRouteImport.update({
+  id: '/api/live-traffic',
+  path: '/api/live-traffic',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRouteEtaRoute = ApiRouteEtaRouteImport.update({
+  id: '/api/route-eta',
+  path: '/api/route-eta',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTrafficTileZXYRoute = ApiTrafficTileZXYRouteImport.update({
+  id: '/api/traffic-tile/$z/$x/$y',
+  path: '/api/traffic-tile/$z/$x/$y',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/control': typeof ApiControlRoute
+  '/api/live-traffic': typeof ApiLiveTrafficRoute
+  '/api/route-eta': typeof ApiRouteEtaRoute
+  '/api/traffic-tile/$z/$x/$y': typeof ApiTrafficTileZXYRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/control': typeof ApiControlRoute
+  '/api/live-traffic': typeof ApiLiveTrafficRoute
+  '/api/route-eta': typeof ApiRouteEtaRoute
+  '/api/traffic-tile/$z/$x/$y': typeof ApiTrafficTileZXYRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/api/control': typeof ApiControlRoute
+  '/api/live-traffic': typeof ApiLiveTrafficRoute
+  '/api/route-eta': typeof ApiRouteEtaRoute
+  '/api/traffic-tile/$z/$x/$y': typeof ApiTrafficTileZXYRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/control'
+  fullPaths:
+    | '/'
+    | '/api/control'
+    | '/api/live-traffic'
+    | '/api/route-eta'
+    | '/api/traffic-tile/$z/$x/$y'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/control'
-  id: '__root__' | '/' | '/api/control'
+  to:
+    | '/'
+    | '/api/control'
+    | '/api/live-traffic'
+    | '/api/route-eta'
+    | '/api/traffic-tile/$z/$x/$y'
+  id:
+    | '__root__'
+    | '/'
+    | '/api/control'
+    | '/api/live-traffic'
+    | '/api/route-eta'
+    | '/api/traffic-tile/$z/$x/$y'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ApiControlRoute: typeof ApiControlRoute
+  ApiLiveTrafficRoute: typeof ApiLiveTrafficRoute
+  ApiRouteEtaRoute: typeof ApiRouteEtaRoute
+  ApiTrafficTileZXYRoute: typeof ApiTrafficTileZXYRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -65,12 +111,36 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiControlRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/live-traffic': {
+      id: '/api/live-traffic'
+      path: '/api/live-traffic'
+      fullPath: '/api/live-traffic'
+      preLoaderRoute: typeof ApiLiveTrafficRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/route-eta': {
+      id: '/api/route-eta'
+      path: '/api/route-eta'
+      fullPath: '/api/route-eta'
+      preLoaderRoute: typeof ApiRouteEtaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/traffic-tile/$z/$x/$y': {
+      id: '/api/traffic-tile/$z/$x/$y'
+      path: '/api/traffic-tile/$z/$x/$y'
+      fullPath: '/api/traffic-tile/$z/$x/$y'
+      preLoaderRoute: typeof ApiTrafficTileZXYRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApiControlRoute: ApiControlRoute,
+  ApiLiveTrafficRoute: ApiLiveTrafficRoute,
+  ApiRouteEtaRoute: ApiRouteEtaRoute,
+  ApiTrafficTileZXYRoute: ApiTrafficTileZXYRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

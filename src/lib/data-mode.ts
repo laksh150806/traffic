@@ -8,7 +8,8 @@
  */
 export type DataMode = "simulated" | "live";
 
-export const DATA_MODE: DataMode = import.meta.env["VITE_DATA_MODE"] === "live" ? "live" : "simulated";
+export const DATA_MODE: DataMode =
+  import.meta.env["VITE_DATA_MODE"] === "live" ? "live" : "simulated";
 
 /**
  * In live mode an open page normally drives the control loops. Set VITE_BROWSER_DRIVES_LOOP=false

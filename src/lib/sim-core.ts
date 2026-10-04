@@ -368,3 +368,16 @@ export function decideForcedPhase(
     startGreen: Math.round(clamp(target.allocatedGreen, MIN_PHASE_SEC, MAX_PHASE_SEC)),
   };
 }
+
+/**
+ * Volume over capacity a junction's approaches average at a demand factor, before any real-world
+ * correction: arrivals are DEMAND_SCALE x the approach's load x factor against a capacity share
+ * that does not change with the factor.
+ */
+export function junctionBaselineVC(junctionIndex: number, factor: number): number {
+  let sum = 0;
+  for (let arm = 1; arm <= APPROACHES_PER_JUNCTION; arm += 1) {
+    sum += DEMAND_SCALE * loadFor(junctionIndex * APPROACHES_PER_JUNCTION + arm) * (factor / 1.15);
+  }
+  return sum / APPROACHES_PER_JUNCTION;
+}

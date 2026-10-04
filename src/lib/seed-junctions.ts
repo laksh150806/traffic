@@ -1,3 +1,5 @@
+import { snapToSignal } from "@/lib/osm-snap";
+
 /** Junction seed, mirrors supabase/migrations so the simulation engine and the database agree. */
 export type SeedJunction = {
   id: number;
@@ -7,9 +9,14 @@ export type SeedJunction = {
   lng: number;
   /** Per-approach capacity, same values the migrations give each road. */
   capacity: number;
+  /** True when the position was moved onto a real traffic signal mapped in OpenStreetMap. */
+  verified?: boolean;
+  /** How far the seed point was from the nearest mapped signal, metres. */
+  offsetM?: number;
 };
 
-export const SEED_JUNCTIONS: SeedJunction[] = [
+/** The junctions exactly as the database migrations seed them, before any position is checked. */
+export const DATABASE_JUNCTIONS: SeedJunction[] = [
   {
     id: 1,
     name: "Tambaram Junction",
@@ -248,3 +255,19 @@ export const SEED_JUNCTIONS: SeedJunction[] = [
   { id: 68, name: "Kelambakkam Junction", zone: "Outer", lat: 12.79, lng: 80.22, capacity: 100 },
   { id: 69, name: "Minjur Signal", zone: "Outer", lat: 13.27, lng: 80.26, capacity: 100 },
 ];
+
+/**
+ * The junctions with positions checked against OpenStreetMap: where a mapped signal lies within a
+ * short walk of the seed point the junction sits on it, otherwise the seed position stays and the
+ * junction is marked unverified. The database seed keeps the original coordinates.
+ */
+export const SEED_JUNCTIONS: SeedJunction[] = DATABASE_JUNCTIONS.map((junction) => {
+  const snap = snapToSignal(junction.lat, junction.lng);
+  return {
+    ...junction,
+    lat: snap.lat,
+    lng: snap.lng,
+    verified: snap.verified,
+    offsetM: snap.offsetM,
+  };
+});

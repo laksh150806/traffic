@@ -1,4 +1,3 @@
-import { supabase } from "@/integrations/supabase/client";
 import { DATA_MODE } from "@/lib/data-mode";
 import * as engine from "@/lib/sim-engine";
 import {
@@ -34,8 +33,15 @@ export type {
 
 const isSimulated = DATA_MODE === "simulated";
 
+/**
+ * The database client is loaded on first use, so a visitor to the simulated app, which never
+ * touches it, does not download it.
+ */
+const database = async () => (await import("@/integrations/supabase/client")).supabase;
+
 export async function fetchJunctions(): Promise<JunctionSummary[]> {
   if (isSimulated) return engine.simFetchJunctions();
+  const supabase = await database();
   const { data, error } = await supabase
     .from("v_junction_congestion")
     .select("*")
@@ -56,6 +62,7 @@ export async function fetchJunctions(): Promise<JunctionSummary[]> {
 
 export async function fetchRoadStates(junctionId: number): Promise<RoadState[]> {
   if (isSimulated) return engine.simFetchRoadStates(junctionId);
+  const supabase = await database();
   const { data: roads, error } = await supabase
     .from("roads")
     .select("road_id, direction, road_name, max_capacity")
@@ -113,6 +120,7 @@ export async function fetchRoadStates(junctionId: number): Promise<RoadState[]> 
 
 export async function fetchCycleComparison(junctionId: number): Promise<CyclePoint[]> {
   if (isSimulated) return engine.simFetchCycleComparison(junctionId);
+  const supabase = await database();
   const { data, error } = await supabase
     .from("signal_history")
     .select(
@@ -128,6 +136,7 @@ export async function fetchCycleComparison(junctionId: number): Promise<CyclePoi
 
 export async function fetchJunctionModel(junctionId: number): Promise<ApproachModelState[]> {
   if (isSimulated) return engine.simFetchJunctionModel(junctionId);
+  const supabase = await database();
   const [{ data: roads }, { data: state, error }] = await Promise.all([
     supabase.from("roads").select("road_id, direction").eq("junction_id", junctionId),
     supabase.from("model_road_state").select("*").eq("junction_id", junctionId),
@@ -160,6 +169,7 @@ export async function fetchJunctionModel(junctionId: number): Promise<ApproachMo
 
 export async function fetchModelPerformance(): Promise<ModelPerformance> {
   if (isSimulated) return engine.simFetchModelPerformance();
+  const supabase = await database();
   const [{ data: accuracy }, { data: state }] = await Promise.all([
     supabase
       .from("model_accuracy")
@@ -189,6 +199,7 @@ export async function fetchModelPerformance(): Promise<ModelPerformance> {
 /** Modelled waiting avoided over the last hour, summed across the network (signed). */
 export async function fetchTotalSecondsSaved(): Promise<ModelledSaving> {
   if (isSimulated) return engine.simFetchTotalSecondsSaved();
+  const supabase = await database();
   const { data, error } = await supabase
     .from("v_modelled_saving")
     .select("seconds, window_min")
@@ -202,6 +213,7 @@ export async function fetchTotalSecondsSaved(): Promise<ModelledSaving> {
 
 export async function fetchCctvFeed(junctionId: number): Promise<CctvPoint[]> {
   if (isSimulated) return engine.simFetchCctvFeed(junctionId);
+  const supabase = await database();
   const { data: roads } = await supabase
     .from("roads")
     .select("road_id")
@@ -247,6 +259,7 @@ export async function fetchCctvFeed(junctionId: number): Promise<CctvPoint[]> {
  */
 export async function fetchCameraTiles(junctionId: number): Promise<CameraTile[]> {
   if (isSimulated) return engine.simFetchCameraTiles(junctionId);
+  const supabase = await database();
   const { data: roads } = await supabase
     .from("roads")
     .select("road_id, direction, road_name")

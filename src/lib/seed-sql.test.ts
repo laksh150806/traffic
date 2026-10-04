@@ -1,7 +1,8 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { SEED_JUNCTIONS } from "@/lib/seed-junctions";
+import { DATABASE_JUNCTIONS, SEED_JUNCTIONS } from "@/lib/seed-junctions";
+import { SNAP_MAX_M } from "@/lib/osm-snap";
 
 const dir = join(process.cwd(), "supabase", "migrations");
 const migrations = readdirSync(dir)
@@ -38,11 +39,25 @@ describe("seed junctions against the SQL migrations", () => {
   it("lists the same 69 junctions in the same order", () => {
     expect(sql).toHaveLength(SEED_JUNCTIONS.length);
     sql.forEach((row, index) => {
-      const seed = SEED_JUNCTIONS[index]!;
+      const seed = DATABASE_JUNCTIONS[index]!;
       expect(seed.id).toBe(index + 1);
       expect(seed.name).toBe(row.name);
       expect(seed.lat).toBeCloseTo(row.lat, 6);
       expect(seed.lng).toBeCloseTo(row.lng, 6);
+    });
+  });
+
+  it("only moves a junction from its database position onto a mapped signal close by", () => {
+    SEED_JUNCTIONS.forEach((junction, index) => {
+      const original = DATABASE_JUNCTIONS[index]!;
+      expect(junction.id).toBe(original.id);
+      expect(junction.name).toBe(original.name);
+      if (!junction.verified) {
+        expect(junction.lat).toBe(original.lat);
+        expect(junction.lng).toBe(original.lng);
+      } else {
+        expect(junction.offsetM).toBeLessThanOrEqual(SNAP_MAX_M);
+      }
     });
   });
 

@@ -32,3 +32,6 @@ dist-ssr
 *.sw?
 
 .env
+
+# Local datasets (large, third-party terms)
+data/
