@@ -20,14 +20,13 @@ import {
   Gauge,
   MapPin,
   Navigation,
+  Radio,
   ServerCrash,
 } from "lucide-react";
 
 import { DashboardHeader } from "@/components/traffic/DashboardHeader";
 import { JunctionList } from "@/components/traffic/JunctionList";
 import { RoadList, type RoadControls } from "@/components/traffic/RoadList";
-import { CycleChart } from "@/components/traffic/CycleChart";
-import { CctvPanel } from "@/components/traffic/CctvPanel";
 import { CameraWall } from "@/components/traffic/CameraWall";
 import { ModelPanel } from "@/components/traffic/ModelPanel";
 import { ScenarioPanel } from "@/components/traffic/ScenarioPanel";
@@ -36,6 +35,9 @@ import { DirectionsPanel } from "@/components/ops/DirectionsPanel";
 import { CityBoard, type BoardStat } from "@/components/ops/CityBoard";
 import { GreenWavePanel } from "@/components/ops/GreenWavePanel";
 import { PriorityRunPanel } from "@/components/ops/PriorityRunPanel";
+import { useLiveWeather } from "@/components/ops/useLiveWeather";
+import { useLiveTraffic } from "@/components/ops/useLiveTraffic";
+import { useLiveEta } from "@/components/ops/useLiveEta";
 import {
   nearestHospital,
   useEngineActivity,
@@ -46,7 +48,6 @@ import { TourCaption, TourInvite } from "@/components/ops/GuidedTour";
 import { useGuidedTour } from "@/components/ops/useGuidedTour";
 import type { Endpoint } from "@/components/ops/OpsMap";
 import { PlaceCard } from "@/components/ops/PlaceCard";
-import { ReplayPanel } from "@/components/ops/ReplayPanel";
 import { replayJunction } from "@/lib/replay";
 import { csvFileName, networkCsv } from "@/lib/export";
 import { decodeView, encodeView } from "@/lib/share";
@@ -58,11 +59,14 @@ import { BROWSER_DRIVES_LOOP, DATA_MODE } from "@/lib/data-mode";
 import {
   clearOperatorOverride,
   clearRoadIncident,
+  getPriorityRun,
+  getRealTraffic,
   reportRoadIncident,
   setOperatorOverride,
   simAdvance,
   simTick,
   getIncidentEnds,
+  getForecastCapacity,
   getScenarioCapacity,
   getScenarioFactor,
   setScenarioMode,
@@ -77,7 +81,9 @@ import {
   type ForecastOptions,
   type JunctionForecast,
 } from "@/lib/forecast";
+import { HOSPITALS } from "@/lib/priority-run";
 import { SEED_JUNCTIONS } from "@/lib/seed-junctions";
+import { speedHistory } from "@/lib/traffic-history";
 import { istClock } from "@/lib/sim-core";
 import { advanceSignals, runTrafficTick } from "@/lib/traffic.functions";
 import {
@@ -94,6 +100,18 @@ import {
 
 const JunctionHologram = lazy(() => import("@/components/space/JunctionHologram"));
 const OpsMap = lazy(() => import("@/components/ops/OpsMap"));
+// The three charting panels pull in Recharts and sit below the first screen, so they load after it.
+const ReplayPanel = lazy(() =>
+  import("@/components/ops/ReplayPanel").then((m) => ({ default: m.ReplayPanel })),
+);
+const CycleChart = lazy(() =>
+  import("@/components/traffic/CycleChart").then((m) => ({ default: m.CycleChart })),
+);
+const CctvPanel = lazy(() =>
+  import("@/components/traffic/CctvPanel").then((m) => ({ default: m.CctvPanel })),
+);
+
+const PanelFallback = () => <Skeleton className="h-56 w-full rounded-2xl" />;
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -198,6 +216,7 @@ function Dashboard() {
   const [routeId, setRouteId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [inviteDismissed, setInviteDismissed] = useState(false);
+  const [showRoadSpeeds, setShowRoadSpeeds] = useState(true);
   const running = useRef(false);
   const advancing = useRef(false);
   const activity = useEngineActivity(isSimulated);
@@ -236,7 +255,11 @@ function Dashboard() {
   const incidentEnds = isSimulated ? getIncidentEnds() : NO_INCIDENTS;
   const incidentKey = [...incidentEnds].map(([id, until]) => `${id}:${until}`).join(",");
   const scenarioFactor = isSimulated && !isForecast ? getScenarioFactor() : undefined;
-  const scenarioCapacity = isSimulated && !isForecast ? getScenarioCapacity() : 1;
+  const scenarioCapacity = !isSimulated
+    ? 1
+    : isForecast
+      ? getForecastCapacity(at.getTime())
+      : getScenarioCapacity();
   const forecastOptions = useMemo<ForecastOptions>(() => {
     const incidents = new Set<number>();
     for (const [id, until] of incidentEnds) if (until > at.getTime()) incidents.add(id);
@@ -345,6 +368,13 @@ function Dashboard() {
     void queryClient.invalidateQueries();
   }, [queryClient]);
 
+  const weather = useLiveWeather(isSimulated, refreshAll);
+  const liveTraffic = useLiveTraffic(isSimulated, refreshAll);
+  const trafficIsLive = liveTraffic.status === "live" || liveTraffic.status === "stale";
+  const roadSpeedsOn = trafficIsLive && showRoadSpeeds && !isForecast;
+  // A forced scenario (rush hour, overnight) is a made-up day, so real speeds are shown but not used.
+  const trafficDriving = getRealTraffic()?.fresh ?? true;
+
   const recalculate = useCallback(async () => {
     if (running.current) return;
     running.current = true;
@@ -402,6 +432,8 @@ function Dashboard() {
   }, [junctionsQuery.data]);
 
   const directions = useDirections(from, to, at, pricing);
+  // TomTom's own time for the trip, for now only: a forecast hour has no live traffic to ask about.
+  const liveEta = useLiveEta(from, to, trafficIsLive && !isForecast);
   const routeIndex = Math.max(
     0,
     directions.assessments.findIndex((a) => a.id === routeId),
@@ -454,7 +486,8 @@ function Dashboard() {
       for (const [id, until] of getIncidentEnds()) if (until > when.getTime()) incidents.add(id);
       const all = forecastNetwork(when, {
         ...(factor === undefined || ms > base.getTime() + 300_000 ? {} : { factor }),
-        ...(ms > base.getTime() + 300_000 ? {} : { capacityScale: getScenarioCapacity() }),
+        capacityScale:
+          ms > base.getTime() + 300_000 ? getForecastCapacity(ms) : getScenarioCapacity(),
         incidents,
       });
       const worst = all.reduce<(typeof all)[number] | null>(
@@ -486,7 +519,8 @@ function Dashboard() {
       const factor = getScenarioFactor();
       const r = replayJunction(index, ms, {
         ...(factor === undefined || ms > base.getTime() + 300_000 ? {} : { factor }),
-        ...(ms > base.getTime() + 300_000 ? {} : { capacityScale: getScenarioCapacity() }),
+        capacityScale:
+          ms > base.getTime() + 300_000 ? getForecastCapacity(ms) : getScenarioCapacity(),
       });
       return {
         waitFixed: r.summary.waitFixed,
@@ -508,6 +542,34 @@ function Dashboard() {
       setTo(null);
       setTab("explore");
     },
+    ...(isSimulated
+      ? {
+          startAmbulance: () => {
+            const start = SEED_JUNCTIONS.find((j) => j.id === 13) ?? SEED_JUNCTIONS[0];
+            const hospital = HOSPITALS.find((h) => h.id === "rggh") ?? HOSPITALS[0];
+            if (!start || !hospital) return;
+            setSelectedId(start.id);
+            launcher.sendAmbulance(
+              { lat: start.lat, lng: start.lng, name: start.name },
+              hospital,
+              8,
+            );
+          },
+          runStatus: () => {
+            const run = getPriorityRun();
+            return run
+              ? {
+                  passed: run.passed,
+                  total: run.stops.length,
+                  savedSec: run.savedSec,
+                  heldVehicles: run.heldVehicles,
+                  finished: run.finished,
+                }
+              : null;
+          },
+          stopAmbulance: launcher.cancel,
+        }
+      : {}),
   });
 
   // ---- a link to this exact view, kept in the address bar
@@ -788,6 +850,8 @@ function Dashboard() {
         onShare={shareView}
         shareLabel={shareLabel}
         onExport={exportCsv}
+        liveTraffic={liveTraffic}
+        trafficDriving={trafficDriving}
       />
       <CommandPalette
         junctions={junctions}
@@ -811,7 +875,7 @@ function Dashboard() {
       ) : (
         <main className="grid flex-1 gap-3 p-3 md:p-4 lg:min-h-0 lg:grid-cols-[260px_minmax(0,1fr)_300px] lg:grid-rows-1 lg:overflow-hidden xl:grid-cols-[320px_minmax(0,1fr)_380px] 2xl:grid-cols-[350px_minmax(0,1fr)_430px]">
           {/* Centre: the map. First in reading order so the search box and map controls come first. */}
-          <div className="panel @container relative isolate h-[520px] overflow-hidden lg:col-start-2 lg:row-start-1 lg:h-full">
+          <div className="panel hud-frame @container relative isolate h-[520px] overflow-hidden lg:col-start-2 lg:row-start-1 lg:h-full">
             <div className="absolute inset-0 z-0">
               <ClientOnly fallback={<MapFallback />}>
                 <Suspense fallback={<MapFallback />}>
@@ -832,6 +896,7 @@ function Dashboard() {
                       run={activity.run}
                       overrides={activity.overrides}
                       incidents={activity.incidents}
+                      trafficOverlay={roadSpeedsOn}
                     />
                   )}
                 </Suspense>
@@ -839,6 +904,7 @@ function Dashboard() {
             </div>
 
             <div className="map-vignette absolute inset-0 z-[5]" aria-hidden />
+            <div className="map-scan absolute inset-0 z-[4]" aria-hidden />
             <p className="sr-only" role="status" aria-live="polite">
               {selected
                 ? `Selected ${selected.name}, ${selected.congestion_level.toLowerCase()}`
@@ -857,7 +923,23 @@ function Dashboard() {
                   }}
                 />
               </div>
-              <ul className="pointer-events-auto flex flex-wrap gap-2 text-xs text-foreground/90">
+              <ul className="pointer-events-auto flex flex-wrap items-center gap-2 text-xs text-foreground/90">
+                {trafficIsLive && !isForecast ? (
+                  <li>
+                    <button
+                      type="button"
+                      aria-pressed={showRoadSpeeds}
+                      onClick={() => setShowRoadSpeeds((on) => !on)}
+                      title="Colour the roads by how fast real traffic is moving (TomTom)"
+                      className={`glass-chip transition-data flex min-h-8 items-center gap-1.5 px-3 py-1.5 ${
+                        showRoadSpeeds ? "text-primary" : "text-muted-foreground"
+                      }`}
+                    >
+                      <Radio className="h-3 w-3" aria-hidden />
+                      Road speeds
+                    </button>
+                  </li>
+                ) : null}
                 {LEGEND.map((item) => (
                   <li key={item.label} className="glass-chip flex items-center gap-1.5 px-3 py-1.5">
                     <span className={`h-2 w-2 rounded-full ${item.cls}`} />
@@ -936,7 +1018,7 @@ function Dashboard() {
                   saved={savedQuery.data}
                   adaptiveDelay={perf ? Math.round(perf.networkDelayAdaptive) : undefined}
                   fixedDelay={perf ? Math.round(perf.networkDelayFixed) : undefined}
-                  {...(isSimulated ? { activity } : {})}
+                  {...(isSimulated ? { activity, weather, liveTraffic, trafficDriving } : {})}
                 />
 
                 <Attention
@@ -953,6 +1035,7 @@ function Dashboard() {
                       junctionId={isLive ? activeId : null}
                       junctionName={selected?.name ?? ""}
                       onChange={refreshAll}
+                      weather={weather}
                     />
                   </>
                 ) : null}
@@ -999,6 +1082,7 @@ function Dashboard() {
                   departAt={at}
                   departNow={!isForecast}
                   levelOf={levelOf}
+                  liveEta={liveEta}
                 />
                 {isSimulated && !isForecast ? (
                   <GreenWavePanel
@@ -1025,6 +1109,17 @@ function Dashboard() {
                 weekend={weekend}
                 onDirectionsFrom={() => directionsFrom("from")}
                 onDirectionsTo={() => directionsFrom("to")}
+                realFlow={
+                  liveTraffic.status === "live" || liveTraffic.status === "stale"
+                    ? liveTraffic.snapshot.junctions.find((j) => j.id === selected.junction_id)
+                    : undefined
+                }
+                speeds={trafficIsLive ? speedHistory(selected.junction_id) : []}
+                positionVerified={
+                  isSimulated
+                    ? SEED_JUNCTIONS.find((j) => j.id === selected.junction_id)?.verified
+                    : undefined
+                }
               />
             ) : (
               <Skeleton className="h-64 w-full rounded-2xl" />
@@ -1038,13 +1133,15 @@ function Dashboard() {
             ) : null}
 
             {selected && isLive ? (
-              <ReplayPanel
-                junctionId={selected.junction_id}
-                startMs={at.getTime()}
-                factor={forecastOptions.factor}
-                capacityScale={forecastOptions.capacityScale}
-                blocked={forecastOptions.incidents?.has(selected.junction_id) ?? false}
-              />
+              <Suspense fallback={<PanelFallback />}>
+                <ReplayPanel
+                  junctionId={selected.junction_id}
+                  startMs={at.getTime()}
+                  factor={forecastOptions.factor}
+                  capacityScale={forecastOptions.capacityScale}
+                  blocked={forecastOptions.incidents?.has(selected.junction_id) ?? false}
+                />
+              </Suspense>
             ) : null}
 
             <section className="panel overflow-hidden">
@@ -1084,17 +1181,21 @@ function Dashboard() {
               performance={performanceQuery.data}
               loading={modelQuery.isLoading && isLive}
             />
-            <CycleChart
-              data={cyclesQuery.data ?? []}
-              saving={savedQuery.data}
-              loading={cyclesQuery.isLoading && isLive}
-            />
+            <Suspense fallback={<PanelFallback />}>
+              <CycleChart
+                data={cyclesQuery.data ?? []}
+                saving={savedQuery.data}
+                loading={cyclesQuery.isLoading && isLive}
+              />
+            </Suspense>
             <CameraWall
               cameras={camerasQuery.data ?? []}
               roads={roads}
               loading={camerasQuery.isLoading && isLive}
             />
-            <CctvPanel data={cctvQuery.data ?? []} loading={cctvQuery.isLoading && isLive} />
+            <Suspense fallback={<PanelFallback />}>
+              <CctvPanel data={cctvQuery.data ?? []} loading={cctvQuery.isLoading && isLive} />
+            </Suspense>
           </div>
         </main>
       )}

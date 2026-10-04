@@ -47,6 +47,8 @@ type Props = {
   /** Junctions where an operator holds a green, and reported road problems. */
   overrides?: OperatorOverride[];
   incidents?: RoadIncident[];
+  /** Colour the roads by real traffic speed (TomTom), through the server so the key stays private. */
+  trafficOverlay?: boolean;
 };
 
 const prefersReducedMotion = () =>
@@ -353,6 +355,7 @@ export default function OpsMap({
   run = null,
   overrides = NONE_OVERRIDES,
   incidents = NONE_INCIDENTS,
+  trafficOverlay = false,
 }: Props) {
   const active = routes[routeIndex] ?? null;
   const onRoute = useMemo(() => new Set(active?.junctions.map((j) => j.junctionId)), [active]);
@@ -383,6 +386,19 @@ export default function OpsMap({
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors'
         maxZoom={19}
       />
+      {trafficOverlay ? (
+        <TileLayer
+          url="/api/traffic-tile/{z}/{x}/{y}"
+          attribution="Traffic &copy; TomTom"
+          opacity={0.75}
+          maxZoom={19}
+          maxNativeZoom={18}
+          zIndex={5}
+          // Tiles older than a minute are stale, so let the browser refetch them when panned back to.
+          updateWhenIdle
+          keepBuffer={1}
+        />
+      ) : null}
       <Camera
         junctions={junctions}
         selectedId={selectedId}

@@ -94,7 +94,12 @@ export type RunLauncher = {
   setPace: (pace: number) => void;
   planning: boolean;
   error: string | null;
-  sendAmbulance: (from: { lat: number; lng: number; name: string }, hospital: Hospital) => void;
+  sendAmbulance: (
+    from: { lat: number; lng: number; name: string },
+    hospital: Hospital,
+    /** Overrides the chosen pace for this run. */
+    pace?: number,
+  ) => void;
   startWave: (route: RouteAssessment) => void;
   cancel: () => void;
 };
@@ -108,7 +113,7 @@ export function usePriorityRunLauncher(): RunLauncher {
   paceRef.current = pace;
   const token = useRef(0);
 
-  const sendAmbulance = useCallback<RunLauncher["sendAmbulance"]>((from, hospital) => {
+  const sendAmbulance = useCallback<RunLauncher["sendAmbulance"]>((from, hospital, pace) => {
     const mine = ++token.current;
     setPlanning(true);
     setError(null);
@@ -131,7 +136,7 @@ export function usePriorityRunLauncher(): RunLauncher {
         label: `Ambulance to ${hospital.name}`,
         coordinates: route.coordinates,
         stops,
-        speedFactor: paceRef.current,
+        speedFactor: pace ?? paceRef.current,
       });
       setPlanning(false);
       if (estimated) {

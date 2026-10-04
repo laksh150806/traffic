@@ -418,3 +418,133 @@ div.leaflet-container {
   scrollbar-width: thin;
   scrollbar-color: oklch(1 0 0 / 0.18) transparent;
 }
+
+/* ------------------------------------------------------------------------------------------
+ * Control-room finish: corner brackets, a radar sweep, a drifting aurora and glowing readouts.
+ * All of it is static or animates transform/opacity only, so it costs the compositor, not paint.
+ * ---------------------------------------------------------------------------------------- */
+
+/* Targeting-reticle corners on the main panels. */
+.hud-frame::after {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  pointer-events: none;
+  border-radius: calc(var(--radius-lg) - 6px);
+  --tick: color-mix(in oklab, var(--primary) 75%, transparent);
+  background:
+    linear-gradient(var(--tick), var(--tick)) top left / 14px 1.5px no-repeat,
+    linear-gradient(var(--tick), var(--tick)) top left / 1.5px 14px no-repeat,
+    linear-gradient(var(--tick), var(--tick)) top right / 14px 1.5px no-repeat,
+    linear-gradient(var(--tick), var(--tick)) top right / 1.5px 14px no-repeat,
+    linear-gradient(var(--tick), var(--tick)) bottom left / 14px 1.5px no-repeat,
+    linear-gradient(var(--tick), var(--tick)) bottom left / 1.5px 14px no-repeat,
+    linear-gradient(var(--tick), var(--tick)) bottom right / 14px 1.5px no-repeat,
+    linear-gradient(var(--tick), var(--tick)) bottom right / 1.5px 14px no-repeat;
+  opacity: 0.55;
+  z-index: 8;
+}
+
+/* A faint radar sweep over the map. The map stays fully clickable underneath. */
+.map-scan {
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.map-scan::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 190%;
+  aspect-ratio: 1;
+  margin: -95% 0 0 -95%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg 318deg,
+    color-mix(in oklab, var(--primary) 6%, transparent) 350deg,
+    color-mix(in oklab, var(--primary) 16%, transparent) 360deg
+  );
+  animation: radar-sweep 14s linear infinite;
+  will-change: transform;
+}
+
+@keyframes radar-sweep {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* A thin light that travels along the top edge of the header: the system is live. */
+.live-edge::before {
+  content: "";
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  top: 0;
+  height: 1.5px;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--primary) 90%, transparent),
+    color-mix(in oklab, var(--nebula) 80%, transparent),
+    transparent
+  );
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: edge-run 5s ease-in-out infinite;
+}
+
+@keyframes edge-run {
+  from {
+    background-position: -40% 0;
+  }
+  to {
+    background-position: 140% 0;
+  }
+}
+
+/* The title in light that shifts from cyan to violet. */
+.text-gradient {
+  background: linear-gradient(
+    95deg,
+    oklch(0.93 0.07 205),
+    oklch(0.82 0.16 215) 45%,
+    oklch(0.76 0.2 295)
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 14px color-mix(in oklab, var(--primary) 35%, transparent));
+}
+
+/* Readout figures glow a little, like a lit display. */
+.numeric {
+  text-shadow: 0 0 14px color-mix(in oklab, currentColor 28%, transparent);
+}
+
+/* The aurora behind everything drifts slowly. A fixed layer moving by transform costs no repaint. */
+body::before {
+  animation: drift 48s ease-in-out infinite alternate;
+  transform: scale(1.1);
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-scan::before,
+  .live-edge::before,
+  body::before {
+    animation: none;
+  }
+}
+
+/* Phones: keep the effects, drop the work. */
+@media (max-width: 640px) {
+  .map-scan::before {
+    animation-duration: 22s;
+  }
+  .hud-frame::after {
+    opacity: 0.35;
+  }
+}

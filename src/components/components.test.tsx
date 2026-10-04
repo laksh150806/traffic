@@ -367,6 +367,51 @@ describe("guided tour", () => {
     expect(screen.getByTestId("state").textContent).toBe("false");
   });
 
+  it("sends an ambulance after the trip, reports its progress, then puts everything back", async () => {
+    const m = makeControls();
+    const startAmbulance = vi.fn<() => void>();
+    const stopAmbulance = vi.fn<() => void>();
+    let polls = 0;
+    const runStatus = vi.fn(() => {
+      polls += 1;
+      return {
+        passed: Math.min(3, polls),
+        total: 3,
+        savedSec: 40 * Math.min(3, polls),
+        heldVehicles: 10,
+        finished: polls >= 4,
+      };
+    });
+    render(<Harness controls={{ ...m.controls, startAmbulance, runStatus, stopAmbulance }} />);
+    fireEvent.click(screen.getByText("start"));
+    // Run the tour on until the ambulance caption is up.
+    for (let i = 0; i < 400 && !screen.queryByText(/Cleared [0-9] of 3 signals/); i += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(250);
+      });
+    }
+    expect(startAmbulance).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/Cleared [0-9] of 3 signals/)).toBeTruthy();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20_000);
+    });
+    expect(stopAmbulance).toHaveBeenCalled();
+    // The tour still ends by handing back to the present.
+    expect(m.setTime).toHaveBeenLastCalledWith(null);
+  });
+
+  it("cancels the ambulance when the tour is stopped", async () => {
+    const m = makeControls();
+    const stopAmbulance = vi.fn<() => void>();
+    render(<Harness controls={{ ...m.controls, stopAmbulance }} />);
+    fireEvent.click(screen.getByText("start"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    fireEvent.click(screen.getByLabelText("Stop the tour"));
+    expect(stopAmbulance).toHaveBeenCalledTimes(1);
+  });
+
   it("stops at once when asked and puts everything back", async () => {
     const m = makeControls();
     const controls = m.controls;

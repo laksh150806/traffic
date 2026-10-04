@@ -22,6 +22,10 @@ Done
 - [x] Live-mode server functions run against the real schema in tests; authenticated,
       schedulable control endpoint and worker
 - [x] Component tests
+- [x] Real traffic from TomTom, real weather from Open-Meteo, signal positions from OpenStreetMap,
+      all optional and all falling back to the simulation
+- [x] Real road speeds on the map and on each junction card, with a history that builds up
+- [x] Ambulance added to the guided tour; bundle split so charts and the database client load on use
 - [x] Operator hold and reported road problems, ambulance priority run, green wave with a
       time and distance diagram, a city board with an activity feed
 

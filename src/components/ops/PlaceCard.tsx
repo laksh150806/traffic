@@ -1,4 +1,6 @@
-import { ArrowRightFromLine, ArrowRightToLine, Radio } from "lucide-react";
+import { ArrowRightFromLine, ArrowRightToLine, MapPinCheck, MapPinned, Radio } from "lucide-react";
+import type { JunctionFlow } from "@/lib/traffic-flow";
+import type { SpeedSample } from "@/lib/traffic-history";
 import { formatIstTime, istDate, istHourOf, type JunctionForecast } from "@/lib/forecast";
 import type { JunctionSummary, RoadState } from "@/lib/traffic-types";
 import { isClearing } from "@/lib/signal-aspect";
@@ -61,6 +63,98 @@ function SignalNow({ roads }: { roads: RoadState[] }) {
   );
 }
 
+/** What the real road is doing here, and how far to trust where this junction is placed. */
+/** Real road speed around the junction over the readings seen so far; the dashed line is free flow. */
+function SpeedLine({ speeds }: { speeds: SpeedSample[] }) {
+  const W = 220;
+  const H = 30;
+  const first = speeds[0]!.t;
+  const span = Math.max(speeds[speeds.length - 1]!.t - first, 1);
+  const points = speeds
+    .map(
+      (s) =>
+        `${(((s.t - first) / span) * (W - 4) + 2).toFixed(1)},${(H - 3 - Math.min(1, s.ratio) * (H - 6)).toFixed(1)}`,
+    )
+    .join(" ");
+  const minutes = Math.max(1, Math.round(span / 60_000));
+  return (
+    <div className="flex items-center gap-2 text-muted-foreground">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="h-7 min-w-0 flex-1"
+        role="img"
+        aria-label={`Real road speed here over the last ${minutes} minutes`}
+      >
+        <line
+          x1="0"
+          x2={W}
+          y1="3"
+          y2="3"
+          stroke="currentColor"
+          strokeOpacity={0.3}
+          strokeDasharray="3 3"
+        />
+        <polyline
+          points={points}
+          fill="none"
+          stroke="var(--signal-low)"
+          strokeWidth={2}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+      </svg>
+      <span className="shrink-0 text-[11px]">last {minutes} min</span>
+    </div>
+  );
+}
+
+function RealTraffic({
+  flow,
+  verified,
+  isForecast,
+  speeds,
+}: {
+  flow: JunctionFlow | undefined;
+  verified: boolean | undefined;
+  isForecast: boolean;
+  speeds: SpeedSample[];
+}) {
+  const percent = flow?.ratio == null ? null : Math.round(flow.ratio * 100);
+  return (
+    <div className="glass-inset mt-3 space-y-1 p-2.5 text-xs">
+      {percent !== null ? (
+        <p className="flex items-center gap-2">
+          <Radio className="h-3.5 w-3.5 shrink-0 text-signal-low signal-live" aria-hidden />
+          <span>
+            Real roads here move at <span className="numeric font-medium">{percent}%</span> of
+            free-flow speed
+            <span className="text-muted-foreground">
+              {" "}
+              (TomTom, {flow?.samples} {flow?.samples === 1 ? "segment" : "segments"})
+              {isForecast ? ", now" : ""}
+            </span>
+          </span>
+        </p>
+      ) : flow ? (
+        <p className="text-muted-foreground">TomTom has no reading on the roads near here.</p>
+      ) : null}
+      {speeds.length >= 2 ? <SpeedLine speeds={speeds} /> : null}
+      {verified !== undefined ? (
+        <p className="flex items-center gap-2 text-muted-foreground">
+          {verified ? (
+            <MapPinCheck className="h-3.5 w-3.5 shrink-0 text-signal-low" aria-hidden />
+          ) : (
+            <MapPinned className="h-3.5 w-3.5 shrink-0 text-signal-moderate" aria-hidden />
+          )}
+          {verified
+            ? "Placed on a real signal mapped in OpenStreetMap."
+            : "Position is approximate: no mapped signal within 450 m, so readings here are for the nearest roads."}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function PlaceCard({
   junction,
   forecast,
@@ -72,6 +166,9 @@ export function PlaceCard({
   weekend,
   onDirectionsFrom,
   onDirectionsTo,
+  realFlow,
+  positionVerified,
+  speeds = [],
 }: {
   junction: JunctionSummary;
   forecast: JunctionForecast;
@@ -85,6 +182,12 @@ export function PlaceCard({
   weekend: boolean;
   onDirectionsFrom: () => void;
   onDirectionsTo: () => void;
+  /** What TomTom reports for the roads around this junction, when live traffic is on. */
+  realFlow?: JunctionFlow | undefined;
+  /** Whether this junction's position was matched to a mapped signal in OpenStreetMap. */
+  positionVerified?: boolean | undefined;
+  /** Real road speeds seen around this junction so far, oldest first. */
+  speeds?: SpeedSample[];
 }) {
   const hour = Math.floor(istHourOf(at));
   // Signed: negative means the adaptive plan is predicted to wait longer than the timer here.
@@ -98,7 +201,7 @@ export function PlaceCard({
   );
 
   return (
-    <section aria-label="Selected junction" className="panel p-4">
+    <section aria-label="Selected junction" className="panel hud-frame p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="meta-label">{junction.zone} zone</p>
@@ -119,6 +222,15 @@ export function PlaceCard({
       ) : (
         <SignalNow roads={roads} />
       )}
+
+      {realFlow || positionVerified !== undefined ? (
+        <RealTraffic
+          flow={realFlow}
+          verified={positionVerified}
+          isForecast={isForecast}
+          speeds={speeds}
+        />
+      ) : null}
 
       <dl className="mt-3 grid grid-cols-2 gap-2">
         <div className="glass-inset p-2.5">

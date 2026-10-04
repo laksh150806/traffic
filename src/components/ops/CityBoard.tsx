@@ -1,5 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import { Ambulance, Hand, TriangleAlert, Waves, type LucideIcon } from "lucide-react";
+import {
+  Ambulance,
+  CloudRain,
+  Hand,
+  Radio,
+  Sun,
+  TriangleAlert,
+  Waves,
+  type LucideIcon,
+} from "lucide-react";
+import { rainAt, rainLabel, type WeatherSnapshot } from "@/lib/weather";
+import type { LiveTraffic } from "@/components/ops/useLiveTraffic";
+import { SEED_JUNCTIONS } from "@/lib/seed-junctions";
 import { AnimatedNumber } from "@/components/space/AnimatedNumber";
 import { useSecondClock } from "@/components/space/useFontsReady";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -77,6 +89,9 @@ export function CityBoard({
   adaptiveDelay,
   fixedDelay,
   activity,
+  weather = null,
+  liveTraffic,
+  trafficDriving = true,
 }: {
   stats: BoardStat[];
   loading: boolean;
@@ -85,6 +100,9 @@ export function CityBoard({
   fixedDelay: number | undefined;
   /** Present only when the app runs its own simulation. */
   activity?: EngineActivity;
+  weather?: WeatherSnapshot | null;
+  liveTraffic?: LiveTraffic;
+  trafficDriving?: boolean;
 }) {
   const now = useSecondClock();
   const [samples, setSamples] = useState<Sample[]>([]);
@@ -101,8 +119,53 @@ export function CityBoard({
   }, [adaptiveDelay, fixedDelay]);
 
   const hours = (saved?.seconds ?? 0) / 3600;
+  // Real road speed across the network, from the junctions TomTom had a reading for.
+  const speeds =
+    liveTraffic && (liveTraffic.status === "live" || liveTraffic.status === "stale")
+      ? liveTraffic.snapshot.junctions.filter(
+          (j): j is typeof j & { ratio: number } => j.ratio !== null,
+        )
+      : [];
+  const meanSpeed = speeds.length
+    ? speeds.reduce((sum, j) => sum + j.ratio, 0) / speeds.length
+    : null;
+  const slowest = speeds.length
+    ? speeds.reduce((worst, j) => (j.ratio < worst.ratio ? j : worst))
+    : null;
+  const mm = weather ? (rainAt(now) ?? weather.current.precipMm) : null;
   const chips = activity
     ? [
+        ...(liveTraffic && (liveTraffic.status === "live" || liveTraffic.status === "stale")
+          ? [
+              {
+                key: "traffic",
+                icon: Radio,
+                text:
+                  liveTraffic.status === "stale"
+                    ? "Real traffic, last reading kept"
+                    : trafficDriving
+                      ? "Real traffic, TomTom"
+                      : "Real traffic paused by scenario",
+                cls:
+                  liveTraffic.status === "live" && trafficDriving
+                    ? "text-signal-low border-signal-low/40"
+                    : "text-signal-moderate border-signal-moderate/40",
+              },
+            ]
+          : []),
+        ...(weather && mm !== null
+          ? [
+              {
+                key: "weather",
+                icon: mm >= 0.1 ? CloudRain : Sun,
+                text: `${Number.isFinite(weather.current.tempC) ? `${Math.round(weather.current.tempC)} °C, ` : ""}${rainLabel(mm).toLowerCase()}`,
+                cls:
+                  mm >= 0.1
+                    ? "text-primary border-primary/40"
+                    : "text-muted-foreground border-border",
+              },
+            ]
+          : []),
         ...(activity.run
           ? [
               {
@@ -212,6 +275,26 @@ export function CityBoard({
         </div>
       </div>
 
+      {meanSpeed !== null && slowest ? (
+        <div className="glass-inset px-3 py-2.5">
+          <p className="meta-label">Real road speed, TomTom</p>
+          <p className="mt-0.5 flex flex-wrap items-baseline gap-x-2">
+            <AnimatedNumber
+              value={Math.round(meanSpeed * 100)}
+              suffix="%"
+              className="numeric text-2xl text-signal-low"
+            />
+            <span className="text-xs text-muted-foreground">
+              of free-flow speed, {speeds.length} junctions
+            </span>
+          </p>
+          <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+            Slowest: {SEED_JUNCTIONS.find((j) => j.id === slowest.id)?.name ?? "a junction"} at{" "}
+            {Math.round(slowest.ratio * 100)}%
+          </p>
+        </div>
+      ) : null}
+
       {activity ? (
         <div className="glass-inset px-3 py-2.5">
           {chips.length > 0 ? (
@@ -249,6 +332,15 @@ export function CityBoard({
             </ul>
           )}
         </div>
+      ) : null}
+      {activity ? (
+        <p className="px-1 text-[10px] leading-snug text-muted-foreground">
+          {liveTraffic && (liveTraffic.status === "live" || liveTraffic.status === "stale")
+            ? "Traffic data © TomTom. "
+            : ""}
+          {weather ? "Weather by Open-Meteo. " : ""}
+          Signal positions © OpenStreetMap contributors.
+        </p>
       ) : null}
     </section>
   );

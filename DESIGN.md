@@ -45,6 +45,10 @@ Mobile stacks: map first (520px tall), then Explore or Directions, then the plac
   jammed junctions glow and send rings outward, and a caption card narrates each stop.
 - Signal heads go amber, then all red, at every handover: the 4 s the model charges as lost time.
 - Jammed junctions send red rings outward; busy ones carry a soft glow.
+- Control-room finish: corner brackets on the main panels, a slow radar sweep over the map, a
+  light that travels along the header, a gradient title and glowing readouts. All of it animates
+  transform or opacity only, is switched off by reduced motion, and is toned down on phones.
+- Real roads are coloured by TomTom speed on request (the Road speeds button).
 - Nothing else moves unprompted; the signal heads in the junction view pulse while green.
 - Approach cards tilt a few degrees toward the pointer.
 - Numbers ease to new values. Everything respects `prefers-reduced-motion`.

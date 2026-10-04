@@ -178,6 +178,39 @@ describe("CityBoard", () => {
     expect(screen.getByText(/vehicle-hours/)).toBeTruthy();
   });
 
+  it("summarises real road speed and names the slowest junction, with the credits", () => {
+    render(
+      <CityBoard
+        stats={[]}
+        loading={false}
+        saved={undefined}
+        adaptiveDelay={undefined}
+        fixedDelay={undefined}
+        activity={{ run: null, overrides: [], incidents: [], events: [] }}
+        liveTraffic={{
+          status: "live",
+          snapshot: {
+            enabled: true,
+            fetchedAtMs: Date.now(),
+            source: "tomtom",
+            tilesOk: 4,
+            tilesTotal: 4,
+            junctions: [
+              { id: 1, ratio: 0.5, samples: 3, nearestM: 5 },
+              { id: 2, ratio: 0.9, samples: 3, nearestM: 5 },
+              { id: 3, ratio: null, samples: 0, nearestM: null },
+            ],
+          },
+        }}
+      />,
+    );
+    expect(screen.getByText("Real road speed, TomTom")).toBeTruthy();
+    expect(screen.getByText(/of free-flow speed, 2 junctions/)).toBeTruthy();
+    expect(screen.getByText(/Slowest: Tambaram Junction at 50%/)).toBeTruthy();
+    expect(screen.getByText(/Real traffic, TomTom/)).toBeTruthy();
+    expect(screen.getByText(/Traffic data/)).toBeTruthy();
+  });
+
   it("shows an empty activity feed without invented entries", () => {
     render(
       <CityBoard

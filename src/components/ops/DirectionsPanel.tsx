@@ -3,6 +3,7 @@ import { ArrowDownUp, Crosshair, Loader2, TriangleAlert } from "lucide-react";
 import { SearchBox } from "@/components/ops/SearchBox";
 import type { Endpoint } from "@/components/ops/OpsMap";
 import { formatKm, formatMinutes, type RouteAssessment } from "@/lib/routing";
+import type { LiveEta } from "@/lib/route-eta";
 import { formatIstTime } from "@/lib/forecast";
 import type { JunctionSummary } from "@/lib/traffic-types";
 
@@ -30,7 +31,36 @@ type Props = {
   /** True when leaving at the present moment rather than at a forecast time. */
   departNow: boolean;
   levelOf: (junctionId: number) => string;
+  /** TomTom's time for the same trip with today's traffic, to compare with the model's estimate. */
+  liveEta?: LiveEta | null;
 };
+
+/** TomTom's live time for the trip beside the model's, so the two can be compared. */
+function LiveEtaCard({ eta, model }: { eta: LiveEta; model: RouteAssessment }) {
+  const gap = Math.round(model.etaAdaptiveSec - eta.travelSec);
+  return (
+    <div className="glass-inset space-y-1 p-3 text-xs" aria-live="polite">
+      <p className="meta-label">Check against TomTom, with traffic now</p>
+      <p>
+        <span className="numeric text-lg text-primary">{formatMinutes(eta.travelSec)}</span> for{" "}
+        {formatKm(eta.lengthM)}
+        {eta.delaySec >= 30
+          ? `; traffic adds ${formatMinutes(eta.delaySec)} to an empty-road ${formatMinutes(eta.freeFlowSec)}`
+          : "; no delay from traffic right now"}
+        .
+      </p>
+      <p className="text-muted-foreground">
+        The model says {formatMinutes(model.etaAdaptiveSec)} for the route shown
+        {Math.abs(gap) < 60
+          ? ", within a minute of TomTom."
+          : gap > 0
+            ? `, ${formatMinutes(gap)} longer than TomTom.`
+            : `, ${formatMinutes(-gap)} shorter than TomTom.`}{" "}
+        The two can follow different roads, and the model is the only one that counts the signals.
+      </p>
+    </div>
+  );
+}
 
 const asEndpoint = (j: JunctionSummary): Endpoint => ({
   lat: j.latitude,
@@ -145,6 +175,13 @@ export function DirectionsPanel(props: Props) {
           Pick two junctions to see how long the trip takes once the delay at the modelled junctions
           is counted, and which route the signal timing favours.
         </p>
+      ) : null}
+
+      {props.liveEta && props.assessments.length > 0 ? (
+        <LiveEtaCard
+          eta={props.liveEta}
+          model={props.assessments[props.routeIndex] ?? props.assessments[0]!}
+        />
       ) : null}
 
       <ul className="space-y-2">

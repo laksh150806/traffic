@@ -23,6 +23,17 @@ export type TourControls = {
   ) => { waitFixed: number; waitAdaptive: number; percent: number } | null;
   showTrip: (fromId: number, toId: number) => void;
   clearTrip: () => void;
+  /** Send an ambulance across the city for the showpiece; absent when the app has no engine. */
+  startAmbulance?: () => void;
+  /** Progress of whatever priority run is going, or null. */
+  runStatus?: () => {
+    passed: number;
+    total: number;
+    savedSec: number;
+    heldVehicles: number;
+    finished: boolean;
+  } | null;
+  stopAmbulance?: () => void;
 };
 
 export type Caption = {
@@ -67,6 +78,7 @@ export function useGuidedTour(controls: TourControls) {
   const stop = useCallback(() => {
     token.current.cancelled = true;
     setCaption(null);
+    live.current.stopAmbulance?.();
     live.current.clearTrip();
     live.current.setTime(null);
   }, []);
@@ -168,6 +180,43 @@ export function useGuidedTour(controls: TourControls) {
 
     c().clearTrip();
     c().setTime(null);
+
+    // An ambulance across the network, with the signals turning green for it in turn.
+    if (c().startAmbulance && c().runStatus) {
+      c().startAmbulance?.();
+      const limit = reducedMotion ? 9000 : 15_000;
+      const began = Date.now();
+      setCaption({
+        time: formatIstTime(base),
+        phase: "Emergency vehicle",
+        title: "An ambulance is crossing the city",
+        body: "Each signal on its road turns green just before it arrives, then goes back to the controller.",
+        jammed: c().snapshot(base.getTime()).jammed,
+        progress: 0.92,
+      });
+      await wait(1500);
+      while (alive() && Date.now() - began < limit) {
+        const run = c().runStatus?.();
+        if (run) {
+          setCaption({
+            time: formatIstTime(base),
+            phase: "Emergency vehicle",
+            title: run.finished
+              ? "The ambulance has arrived"
+              : `Cleared ${run.passed} of ${run.total} signals`,
+            body: `An ordinary vehicle would have waited about ${run.savedSec} s at these signals. ${run.heldVehicles} vehicles waited on the side roads so it could pass.`,
+            jammed: c().snapshot(base.getTime()).jammed,
+            progress: 0.92,
+          });
+          if (run.finished) break;
+        }
+        await wait(600);
+      }
+      if (alive() && c().runStatus?.()?.finished) await wait(2500);
+      c().stopAmbulance?.();
+      if (!alive()) return;
+    }
+
     setCaption({
       time: formatIstTime(base),
       phase: "Back to now",

@@ -16,6 +16,7 @@ import type { RoadState } from "@/lib/traffic-data";
 import { junctionAspects } from "@/lib/signal-aspect";
 import { useSecondClock } from "@/components/space/useFontsReady";
 import { MIN_PHASE_SEC } from "@/lib/sim-core";
+import { ASSUMED_LANES, carEquivalents, queueLengthM } from "@/lib/vehicle-mix";
 import type { OperatorOverride, RoadIncident, RoadIncidentKind } from "@/lib/sim-engine";
 
 const DIRECTION_ICON = {
@@ -205,6 +206,15 @@ export function RoadList({
               <div>
                 <p className="meta-label">Vehicles</p>
                 <p className="numeric text-xl transition-data">{road.vehicle_count}</p>
+                {road.vehicle_count > 0 ? (
+                  <p
+                    className="text-[11px] text-muted-foreground"
+                    title={`Assumes the usual Chennai mix of two-wheelers, cars, autos, buses and trucks over ${ASSUMED_LANES} lanes. See src/lib/vehicle-mix.ts.`}
+                  >
+                    about {Math.round(queueLengthM(road.vehicle_count))} m of queue,{" "}
+                    {Math.round(carEquivalents(road.vehicle_count))} car units
+                  </p>
+                ) : null}
                 <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
                   <div
                     className={`h-full rounded-full transition-data ${tone}`}

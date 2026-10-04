@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { CloudMoon, CloudRain, Siren, SunMedium, Timer } from "lucide-react";
+import { capacityForRain, rainAt, rainLabel, type WeatherSnapshot } from "@/lib/weather";
 import {
   clearIncidents,
   getActiveIncidents,
@@ -10,11 +11,44 @@ import {
 } from "@/lib/sim-engine";
 
 const MODES: Array<{ id: ScenarioMode; label: string; hint: string; icon: typeof Timer }> = [
-  { id: "auto", label: "Time of day", hint: "Follows Chennai's clock", icon: Timer },
+  { id: "auto", label: "Time of day", hint: "Clock and real weather", icon: Timer },
   { id: "rush", label: "Rush hour", hint: "Peak demand everywhere", icon: SunMedium },
   { id: "night", label: "Overnight", hint: "Light traffic", icon: CloudMoon },
   { id: "rain", label: "Heavy rain", hint: "Wet roads, 20% less capacity", icon: CloudRain },
 ];
+
+/** What the real weather is and whether it is affecting the simulation. */
+function WeatherLine({
+  weather,
+  following,
+}: {
+  weather: WeatherSnapshot | null;
+  following: boolean;
+}) {
+  if (!weather) {
+    return (
+      <p className="mt-2 text-[11px] text-muted-foreground">
+        Real weather could not be read, so Time of day runs dry.
+      </p>
+    );
+  }
+  const mm = rainAt(Date.now()) ?? weather.current.precipMm;
+  const lost = Math.round((1 - capacityForRain(mm)) * 100);
+  const temp = Number.isFinite(weather.current.tempC)
+    ? `${weather.current.tempC.toFixed(1)} °C, `
+    : "";
+  return (
+    <p className="mt-2 text-[11px] text-muted-foreground" role="status">
+      Chennai now: {temp}
+      {rainLabel(mm).toLowerCase()} ({mm.toFixed(1)} mm in the last hour, Open-Meteo).{" "}
+      {!following
+        ? "This scenario ignores the real weather."
+        : lost > 0
+          ? `It is slowing the simulated traffic: ${lost}% less capacity on every approach.`
+          : "Dry, so it changes nothing; real rain would cut capacity here."}
+    </p>
+  );
+}
 
 /**
  * Scenario controls. They change what the simulator feeds the signals so the
@@ -24,10 +58,12 @@ export function ScenarioPanel({
   junctionId,
   junctionName,
   onChange,
+  weather = null,
 }: {
   junctionId: number | null;
   junctionName: string;
   onChange: () => void;
+  weather?: WeatherSnapshot | null;
 }) {
   const [mode, setMode] = useState<ScenarioMode>("auto");
   const [incidents, setIncidents] = useState<number[]>([]);
@@ -82,6 +118,8 @@ export function ScenarioPanel({
           </button>
         ))}
       </div>
+
+      <WeatherLine weather={weather} following={mode === "auto"} />
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <button

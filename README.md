@@ -38,6 +38,8 @@ It works like a maps app for a traffic control room:
   would meet red with the signals as they stand, and one button runs the wave: each signal turns
   green for the car as it arrives. Runs can be shown at real time, 4 times or 8 times faster.
   Priority order at a junction is ambulance, then an operator's hold, then a green wave.
+- **Real traffic.** With a TomTom key, a badge says so, roads can be coloured by real speed, and
+  each junction's card says how fast the roads around it are moving.
 - **City board.** The headline numbers, the waiting avoided in vehicle-hours, a line of the average
   wait under the adaptive plan against a fixed timer, and a live activity feed.
 - **Scenarios.** Rush hour, overnight, heavy rain (wet roads cut capacity by a fifth) and a
@@ -62,17 +64,19 @@ app runs in **simulated mode** and simulates the whole network in the browser.
 
 Other scripts:
 
-| Script                | What it does                                                         |
-| --------------------- | -------------------------------------------------------------------- |
-| `npm run build`       | Production build                                                     |
-| `npm run preview`     | Serve the production build                                           |
-| `npm test`            | Unit, component and live-loop tests (about 230, a few seconds)       |
-| `npm run test:db`     | Applies every migration to an in-process Postgres and checks it      |
-| `npm run rubric`      | Runs the coursework SQL (`supabase/rubric`) and saves its output     |
-| `npm run control`     | Worker that keeps the live control loop running with no browser open |
-| `npm run build:setup` | Rebuilds `supabase/setup.sql` from the migrations                    |
-| `npm run typecheck`   | TypeScript, strict mode                                              |
-| `npm run lint`        | ESLint and Prettier                                                  |
+| Script                               | What it does                                                            |
+| ------------------------------------ | ----------------------------------------------------------------------- |
+| `npm run build`                      | Production build                                                        |
+| `npm run preview`                    | Serve the production build                                              |
+| `npm test`                           | Unit, component and live-loop tests (over 300, under a minute)          |
+| `npm run test:db`                    | Applies every migration to an in-process Postgres and checks it         |
+| `npm run rubric`                     | Runs the coursework SQL (`supabase/rubric`) and saves its output        |
+| `npm run control`                    | Worker that keeps the live control loop running with no browser open    |
+| `npm run build:setup`                | Rebuilds `supabase/setup.sql` from the migrations                       |
+| `node scripts/fit-demand.mjs`        | Compares the demand curve with the datasets in `data/` (`docs/DATA.md`) |
+| `node scripts/fetch-osm-signals.mjs` | Refreshes the mapped signal positions from OpenStreetMap                |
+| `npm run typecheck`                  | TypeScript, strict mode                                                 |
+| `npm run lint`                       | ESLint and Prettier                                                     |
 
 If the dev server keeps dying on a low-memory machine, use `npm run build` then
 `npm run preview` instead. It needs a fraction of the memory.
@@ -87,12 +91,48 @@ Set `VITE_DATA_MODE` in `.env.local` (copy `.env.example`).
 - `live`. The dashboard reads and writes a Supabase project. The server functions in
   `src/lib/traffic.functions.ts` re-solve the network and advance the signals.
 
-There is no public sensor feed for Chennai, so vehicle counts come from a demand
-simulator in both modes, and the UI says so. The signal plans and predictions are real
-calculations (Webster's method, the HCM delay equation) applied to that simulated traffic.
-The demand curve is a synthetic daily shape, and `DEMAND_SCALE` in `sim-core.ts` was chosen
-so the busiest approaches pass capacity at the peaks; it is a calibration choice, not a
-measurement.
+There is no public vehicle-count or signal feed for Chennai, so queues and vehicle counts come
+from a demand simulator in both modes, and the UI says so. The signal plans and predictions
+are real calculations (Webster's method, the HCM delay equation) applied to that traffic.
+Without any keys, the demand follows a synthetic daily shape, and `DEMAND_SCALE` in
+`sim-core.ts` was chosen so the busiest approaches pass capacity at the peaks; it is a
+calibration choice, not a measurement.
+
+## Real data, with no database
+
+Three free sources make the simulation follow what Chennai is really doing. Each one is
+optional and each falls back quietly to the simulation if it is missing or unreachable.
+
+| Source                  | What it changes                                                                                                                                           | Setup                                                                                            |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| **TomTom traffic flow** | How fast real traffic is moving on the roads around each junction sets how heavy the demand there is. The map can colour every road by real speed.        | A free key in `.env.local` as `TOMTOM_API_KEY` (server side only; never prefix it with `VITE_`). |
+| **Open-Meteo**          | Real rain cuts capacity: light rain by 8 %, steady rain (2.5 mm an hour or more) by 20 %. It also covers the next two days in forecasts and trip pricing. | None: no key.                                                                                    |
+| **OpenStreetMap**       | 28 of the 69 junctions sit on a real mapped signal, and every junction says whether its position was verified.                                            | None: positions are saved in `src/lib/osm-signals.json`.                                         |
+
+How the TomTom speed becomes demand, in `src/lib/traffic-flow.ts` and `sim-engine.ts`:
+
+1. The server (`/api/live-traffic`) reads TomTom's vector flow tiles for the area, once a
+   minute at most whoever is looking, and takes the speed ratio (current over free-flow speed)
+   of the road segments near each junction.
+2. The ratio is turned into volume over capacity by inverting the Bureau of Public Roads delay
+   curve, the standard link-speed model in planning software.
+3. Each junction's demand is scaled so the model's volume over capacity matches that figure,
+   moving half way to each new reading so one odd one does not jerk it. A reading older than
+   ten minutes is ignored.
+4. A free-flowing road (95 % of free-flow speed or more) can only lower demand, never raise it:
+   free-flow speed cannot say how empty a road is, only that it is not near capacity.
+
+What this is and is not: TomTom measures **speed on a road**, not vehicles or queues at a
+signal. The queues, the signal plans and the savings are still computed by the model from the
+demand those speeds imply. The speed-to-demand step is a planning rule of thumb. Ten junctions
+have no road near their position in the project's seed, so they stay on the assumed curve, and
+the 41 junctions whose position is not verified are marked approximate on their card.
+
+The credits the three services ask for are shown in the city board: Traffic data © TomTom,
+weather by Open-Meteo, signal positions © OpenStreetMap contributors.
+
+The demand curve was also compared with two public traffic-count datasets that are not from
+Chennai; `docs/DATA.md` has what that found, and `node scripts/fit-demand.mjs` repeats it.
 
 ## How the model works
 
@@ -188,6 +228,14 @@ src/
   lib/traffic-model.ts      Webster plan, HCM delay, junction solver
   lib/fixed-plan.ts         the fixed timer each junction is compared with
   lib/sim-core.ts           demand curve, queue step, phase controller (browser and server)
+  lib/traffic-flow.ts       TomTom speed tiles to a speed ratio per junction, and ratio to demand
+  lib/flow-tiles.server.ts  server only: fetches and decodes the tiles (the key stays here)
+  lib/weather.ts            Open-Meteo rain and what it does to capacity
+  lib/osm-snap.ts           places junctions on real mapped signals
+  lib/traffic-history.ts    the real road speeds seen so far, kept in the browser
+  lib/vehicle-mix.ts        the assumed Chennai vehicle mix, queue length in metres
+  lib/priority-run.ts       ambulance and green-wave runs, and the red-light projection
+  routes/api/live-traffic.ts, traffic-tile.$z.$x.$y.ts   the server routes that hold the TomTom key
   lib/forecast.ts           steady-state forecast of every junction for any hour, and the busiest moments
   lib/replay.ts             half an hour at one junction, fixed timer against adaptive
   lib/signal-aspect.ts      green, amber or red for each head, from the 4 s lost time
@@ -207,7 +255,6 @@ supabase/
   tests/                    checks run on an in-process Postgres
   rubric/                   coursework SQL: subqueries, views and joins, trigger, cursor, procedure
 DESIGN.md                   visual design notes
-docs/CRITIQUE.md            the adversarial review this version responds to
 ```
 
 The 3D junction view is defensive: if WebGL is missing, the GPU resets, or the frame rate
