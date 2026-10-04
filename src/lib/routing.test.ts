@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { forecastNetwork, istDate } from "@/lib/forecast";
 import {
+  armForBearing,
   assessRoute,
+  bearingDeg,
   distanceToSegment,
   fetchOsrmRoutes,
   formatKm,
@@ -60,7 +62,7 @@ describe("assessRoute", () => {
   const peak = new Map(forecastNetwork(istDate(18, 30)).map((f) => [f.junctionId, f]));
 
   it("adds each junction's modelled delay to the drive time", () => {
-    const here = [{ junctionId: 1, name: "A", alongM: 100, offM: 10 }];
+    const here = [{ junctionId: 1, name: "A", arm: null, alongM: 100, offM: 10 }];
     const a = assessRoute(route, here, peak);
     expect(a.driveSec).toBe(900);
     expect(a.signalAdaptiveSec).toBe(Math.round(peak.get(1)!.delayAdaptive));
@@ -70,8 +72,8 @@ describe("assessRoute", () => {
 
   it("prices each junction at the time the vehicle reaches it", () => {
     const here = [
-      { junctionId: 1, name: "A", alongM: 0, offM: 5 },
-      { junctionId: 2, name: "B", alongM: 9_000, offM: 5 },
+      { junctionId: 1, name: "A", arm: null, alongM: 0, offM: 5 },
+      { junctionId: 2, name: "B", arm: null, alongM: 9_000, offM: 5 },
     ];
     const seen: Array<[number, number]> = [];
     const priced = assessRoute(route, here, (id, secondsIn) => {
@@ -102,6 +104,61 @@ describe("assessRoute", () => {
     const slow = assessRoute({ ...route, durationSec: 2000 }, [], peak);
     const fast = assessRoute(route, [], peak);
     expect(rankRoutes([slow, fast])[0]).toBe(fast);
+  });
+});
+
+describe("which arm a route waits on", () => {
+  it("reads compass bearings", () => {
+    expect(bearingDeg([80, 13], [80, 13.01])).toBeCloseTo(0, 0);
+    expect(bearingDeg([80, 13], [80.01, 13])).toBeCloseTo(90, 0);
+    expect(bearingDeg([80, 13], [80, 12.99])).toBeCloseTo(180, 0);
+    expect(bearingDeg([80, 13], [79.99, 13])).toBeCloseTo(270, 0);
+  });
+
+  it("maps the direction of travel to the arm it came from", () => {
+    expect(armForBearing(0)).toBe(1); // heading north: waits on the south arm
+    expect(armForBearing(90)).toBe(3); // heading east: west arm
+    expect(armForBearing(180)).toBe(0); // heading south: north arm
+    expect(armForBearing(270)).toBe(2); // heading west: east arm
+    expect(armForBearing(359)).toBe(1);
+    expect(armForBearing(44)).toBe(1);
+    expect(armForBearing(45)).toBe(3);
+  });
+
+  it("finds the arm from the stretch before the junction", () => {
+    // Driving east along latitude 13, past a junction at longitude 80.05.
+    const east = junctionsAlongRoute(line, [{ id: 1, name: "A", lat: 13.0001, lng: 80.05 }]);
+    expect(east[0]!.arm).toBe(3);
+    // The same road driven the other way arrives on the east arm.
+    const west = junctionsAlongRoute([...line].reverse(), [
+      { id: 1, name: "A", lat: 13.0001, lng: 80.05 },
+    ]);
+    expect(west[0]!.arm).toBe(2);
+  });
+
+  it("has no arm when the route starts at the junction", () => {
+    const start = junctionsAlongRoute(line, [{ id: 1, name: "A", lat: 13.0, lng: 80.0 }]);
+    expect(start[0]!.arm).toBeNull();
+  });
+
+  it("charges the wait of the arm used, not the junction average", () => {
+    const route: OsrmRoute = { coordinates: line, distanceM: 10_000, durationSec: 900 };
+    const base = forecastNetwork(istDate(18, 30)).find((f) => f.junctionId === 1)!;
+    const lopsided = {
+      ...base,
+      approachDelayAdaptive: [10, 70, 20, 30],
+      approachDelayFixed: [15, 80, 25, 40],
+    };
+    const price = (arm: 0 | 1 | 2 | 3 | null) =>
+      assessRoute(
+        route,
+        [{ junctionId: 1, name: "A", arm, alongM: 500, offM: 5 }],
+        new Map([[1, lopsided]]),
+      );
+    expect(price(1).signalAdaptiveSec).toBe(70);
+    expect(price(1).signalFixedSec).toBe(80);
+    expect(price(0).signalAdaptiveSec).toBe(10);
+    expect(price(null).signalAdaptiveSec).toBe(Math.round(base.delayAdaptive));
   });
 });
 

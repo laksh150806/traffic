@@ -17,9 +17,18 @@ export type OsrmRoute = {
   durationSec: number;
 };
 
+/** Arms of a junction, in the order the model lists them: north, south, east, west. */
+export type Arm = 0 | 1 | 2 | 3;
+
 export type RouteJunction = {
   junctionId: number;
   name: string;
+  /**
+   * The arm the vehicle waits on, worked out from the direction it is travelling as it reaches the
+   * junction (heading south means it arrives from the north arm). Null when the route starts at the
+   * junction, so there is no approach to read a heading from.
+   */
+  arm: Arm | null;
   /** Metres from the start of the route to the closest point to this junction. */
   alongM: number;
   /** How far the junction sits from the route line, metres. */
@@ -73,6 +82,41 @@ export function distanceToSegment(p: LngLat, a: LngLat, b: LngLat) {
   return { distance: Math.hypot(px - t * bx, py - t * by), t };
 }
 
+/** Compass bearing (degrees clockwise from north) of the move from a to b. */
+export function bearingDeg(a: LngLat, b: LngLat) {
+  const dy = b[1] - a[1];
+  const dx = (b[0] - a[0]) * Math.cos(toRad((a[1] + b[1]) / 2));
+  return ((Math.atan2(dx, dy) * 180) / Math.PI + 360) % 360;
+}
+
+/** The arm a vehicle waits on when it is travelling along `bearing`: it came from the opposite side. */
+export function armForBearing(bearing: number): Arm {
+  if (bearing >= 315 || bearing < 45) return 1; // heading north, so it waits on the south arm
+  if (bearing < 135) return 3; // heading east, waits on the west arm
+  if (bearing < 225) return 0; // heading south, waits on the north arm
+  return 2; // heading west, waits on the east arm
+}
+
+/** Point a given distance along the polyline. */
+function pointAt(coordinates: LngLat[], cumulative: number[], distanceM: number): LngLat {
+  const last = cumulative[cumulative.length - 1] ?? 0;
+  const target = Math.max(0, Math.min(last, distanceM));
+  for (let i = 1; i < coordinates.length; i += 1) {
+    const end = cumulative[i] ?? 0;
+    if (target <= end) {
+      const start = cumulative[i - 1] ?? 0;
+      const t = end === start ? 0 : (target - start) / (end - start);
+      const a = coordinates[i - 1] as LngLat;
+      const b = coordinates[i] as LngLat;
+      return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+    }
+  }
+  return coordinates[coordinates.length - 1] as LngLat;
+}
+
+/** How far before the junction the heading is read, metres. */
+const HEADING_LOOKBACK_M = 120;
+
 /** Junctions the route passes through, in driving order. */
 export function junctionsAlongRoute(
   coordinates: LngLat[],
@@ -104,9 +148,18 @@ export function junctionsAlongRoute(
       }
     }
     if (best.distance <= maxM) {
+      let arm: Arm | null = null;
+      // Heading over the last stretch before the junction. Too close to the start of the route
+      // there is no approach to read, so the junction-wide figure is used instead.
+      if (best.along >= 30) {
+        const before = pointAt(coordinates, cumulative, best.along - HEADING_LOOKBACK_M);
+        const at = pointAt(coordinates, cumulative, best.along);
+        arm = armForBearing(bearingDeg(before, at));
+      }
       found.push({
         junctionId: junction.id,
         name: junction.name,
+        arm,
         alongM: Math.round(best.along),
         offM: Math.round(best.distance),
       });
@@ -156,8 +209,11 @@ export function assessRoute(
         ? forecast(stop.junctionId, secondsIn)
         : forecast.get(stop.junctionId);
     if (!f) continue;
-    adaptive += f.delayAdaptive;
-    fixed += f.delayFixed;
+    // Wait on the arm the vehicle really uses; junction-wide only when that is not known.
+    const armAdaptive = stop.arm === null ? undefined : f.approachDelayAdaptive[stop.arm];
+    const armFixed = stop.arm === null ? undefined : f.approachDelayFixed[stop.arm];
+    adaptive += armAdaptive ?? f.delayAdaptive;
+    fixed += armFixed ?? f.delayFixed;
     const score = LEVEL_RANK[f.level] * 10 + f.saturation;
     if (score > worstScore) {
       worstScore = score;

@@ -11,6 +11,7 @@ import {
   INCIDENT_CAPACITY_FACTOR,
   approachDemandVph,
   incidentRoadId,
+  istClock,
   levelFor,
   timeOfDayFactor,
 } from "@/lib/sim-core";
@@ -32,6 +33,10 @@ export type JunctionForecast = {
   approachQueues: number[];
   /** Total arrival rate over the four approaches, veh/h. */
   flowVph: number;
+  /** Wait per vehicle on each approach (north, south, east, west) under the adaptive plan, seconds. */
+  approachDelayAdaptive: number[];
+  /** The same under the fixed timer. */
+  approachDelayFixed: number[];
   /** Flow-weighted wait per vehicle, seconds. */
   delayAdaptive: number;
   delayFixed: number;
@@ -46,6 +51,8 @@ export type ForecastOptions = {
   factor?: number;
   /** Junction ids with a blocked lane. */
   incidents?: ReadonlySet<number>;
+  /** Share of normal capacity every approach has, e.g. RAIN_CAPACITY_FACTOR on wet roads. */
+  capacityScale?: number;
 };
 
 const WINDOW_SEC = 12;
@@ -73,7 +80,8 @@ export function forecastJunction(
       previousArrivalRate: null,
       measuredArrivals: (demandVph / 3600) * WINDOW_SEC,
       maxCapacity: seed.capacity,
-      capacityFactor: roadId === blockedRoad ? INCIDENT_CAPACITY_FACTOR : 1,
+      capacityFactor:
+        (roadId === blockedRoad ? INCIDENT_CAPACITY_FACTOR : 1) * (options.capacityScale ?? 1),
     };
   });
 
@@ -94,6 +102,8 @@ export function forecastJunction(
     maxQueue: Number(maxQueue.toFixed(1)),
     approachQueues: queues.map((q) => Number(q.toFixed(2))),
     flowVph: model.approaches.reduce((sum, a) => sum + a.arrivalRateVph, 0),
+    approachDelayAdaptive: model.approaches.map((a) => a.delayAdaptive),
+    approachDelayFixed: model.approaches.map((a) => a.delayFixed),
     delayAdaptive: model.delayAdaptive,
     delayFixed: model.delayFixed,
     cycle: model.cycleLength,
@@ -105,6 +115,9 @@ export function forecastJunction(
  * The same figures for the present moment, read from the live model rows instead of
  * the steady-state formula, so a card can show one consistent set of numbers.
  */
+/** Arms in the order the model and the road ids use. */
+const ARM_ORDER = ["NORTH", "SOUTH", "EAST", "WEST"];
+
 export function liveAsForecast(
   summary: JunctionSummary,
   model: ApproachModelState[],
@@ -114,6 +127,13 @@ export function liveAsForecast(
   const weighted = (pick: (a: ApproachModelState) => number) =>
     flow > 0 ? model.reduce((sum, a) => sum + pick(a) * a.arrival_rate_vph, 0) / flow : 0;
   const queues = model.map((a) => a.queue_now);
+  // The rows arrive in display order (north, east, south, west); the per-arm lists use the model's
+  // order (north, south, east, west), the same as the road ids.
+  const inArmOrder = (pick: (a: ApproachModelState) => number) =>
+    ARM_ORDER.map((direction) => {
+      const row = model.find((a) => a.direction === direction);
+      return row ? pick(row) : 0;
+    });
   return {
     junctionId: summary.junction_id,
     saturation: Number(
@@ -122,13 +142,56 @@ export function liveAsForecast(
     level: summary.congestion_level,
     queue: Number((queues.reduce((a, b) => a + b, 0) / queues.length).toFixed(1)),
     maxQueue: Math.max(...queues),
-    approachQueues: queues,
+    approachQueues: inArmOrder((a) => a.queue_now),
+    approachDelayAdaptive: inArmOrder((a) => a.predicted_delay_adaptive_sec),
+    approachDelayFixed: inArmOrder((a) => a.predicted_delay_fixed_sec),
     flowVph: flow,
     delayAdaptive: Number(weighted((a) => a.predicted_delay_adaptive_sec).toFixed(1)),
     delayFixed: Number(weighted((a) => a.predicted_delay_fixed_sec).toFixed(1)),
     cycle: model[0]?.cycle_length_sec ?? 0,
     overCapacity: model.some((a) => !a.queue_clears && a.degree_saturation > 1),
   };
+}
+
+/**
+ * The busiest moments ahead, as minutes from `now` in whole steps. The day is split into the
+ * hours before 1 pm and the rest; in each part the moment with the highest demand within the next
+ * 24 hours wins, and across a plateau the middle of it is used. On a weekend that finds the lunch
+ * and evening-outing peaks, on a working day the commuter peaks.
+ */
+export function findPeaks(now: Date, stepMin = 5) {
+  type Group = { key: string; best: number; steps: number[] };
+  const groups = new Map<string, Group>();
+  for (let m = stepMin; m <= 24 * 60; m += stepMin) {
+    const at = new Date(now.getTime() + m * 60_000);
+    const { hour } = istClock(at);
+    const half = hour < 13 ? "am" : "pm";
+    const day = Math.floor((at.getTime() + 5.5 * 3600_000) / 86_400_000);
+    const key = `${half}${day}`;
+    const factor = timeOfDayFactor(at);
+    const group = groups.get(key) ?? { key, best: -Infinity, steps: [] };
+    if (factor > group.best + 1e-9) {
+      group.best = factor;
+      group.steps = [m];
+    } else if (Math.abs(factor - group.best) <= 1e-9) {
+      group.steps.push(m);
+    }
+    groups.set(key, group);
+  }
+  const pick = (half: "am" | "pm") => {
+    const candidates = [...groups.values()].filter((g) => g.key.startsWith(half));
+    const top = candidates.reduce((a, b) => (b.best > a.best + 1e-9 ? b : a));
+    const mid = top.steps[Math.floor(top.steps.length / 2)] ?? stepMin;
+    return Math.round(mid / stepMin) * stepMin;
+  };
+  const first = pick("am");
+  const second = pick("pm");
+  return { morning: first, evening: second };
+}
+
+/** "Morning peak", "Midday peak" or "Evening peak", from the Chennai hour of the peak. */
+export function peakLabel(hour: number) {
+  return hour < 11 ? "Morning peak" : hour < 16 ? "Midday peak" : "Evening peak";
 }
 
 /** Forecast every junction. */
@@ -155,14 +218,15 @@ export function forecastAsSummary(forecast: JunctionForecast): JunctionSummary {
 }
 
 /** A Date whose Chennai wall clock reads `hour:minute` (IST is UTC+5:30, no daylight saving). */
-export function istDate(hour: number, minute = 0) {
-  return new Date(Date.UTC(2026, 0, 5, hour, minute) - 5.5 * 3600 * 1000);
+/** A fixed Monday (or, with `weekend`, Saturday) at the given Chennai hour, for typical-day charts. */
+export function istDate(hour: number, minute = 0, weekend = false) {
+  return new Date(Date.UTC(2026, 0, weekend ? 10 : 5, hour, minute) - 5.5 * 3600 * 1000);
 }
 
 /** One value per hour of the day for a junction: the shape of a typical day. */
-export function dayProfile(index: number) {
+export function dayProfile(index: number, weekend = false) {
   return Array.from({ length: 24 }, (_, hour) => {
-    const f = forecastJunction(index, istDate(hour));
+    const f = forecastJunction(index, istDate(hour, 0, weekend));
     return { hour, saturation: f.saturation, level: f.level, queue: f.queue };
   });
 }

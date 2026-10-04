@@ -9,3 +9,9 @@
 export type DataMode = "demo" | "live";
 
 export const DATA_MODE: DataMode = import.meta.env["VITE_DATA_MODE"] === "live" ? "live" : "demo";
+
+/**
+ * In live mode an open page normally drives the control loops. Set VITE_BROWSER_DRIVES_LOOP=false
+ * when a scheduler does it (see README) and pages only read.
+ */
+export const BROWSER_DRIVES_LOOP = import.meta.env["VITE_BROWSER_DRIVES_LOOP"] !== "false";

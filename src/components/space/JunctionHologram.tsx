@@ -3,12 +3,15 @@ import { useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import type { RoadState } from "@/lib/traffic-types";
+import { junctionAspects, type Aspect } from "@/lib/signal-aspect";
+import { useFontsVersion, useSecondClock } from "@/components/space/useFontsReady";
 import { makeGlowTexture, makeLabelTexture } from "@/components/space/label-texture";
 import { GlCanvas } from "@/components/space/GlCanvas";
 
 /** Hex mirrors of the signal tokens in styles.css. */
 const GREEN = "#4ade80";
 const RED = "#fb4d6a";
+const AMBER = "#fbbf24";
 const CAR = "#67e8f9";
 
 const ARM: Record<string, { dir: [number, number]; label: string }> = {
@@ -48,11 +51,14 @@ function buildAssets() {
     carRed: car(0.35),
     lineGreen: flat(GREEN),
     lineRed: flat(RED),
+    lineAmber: flat(AMBER),
     headGreen: flat(GREEN),
     headRed: flat(RED),
+    headAmber: flat(AMBER),
     postMat: new THREE.MeshLambertMaterial({ color: "#2a2d57" }),
     haloGreen: halo(GREEN, 0.9),
     haloRed: halo(RED, 0.55),
+    haloAmber: halo(AMBER, 0.8),
   };
 }
 
@@ -64,24 +70,30 @@ function disposeAssets(assets: Assets) {
 
 function Approach({
   road,
+  aspect,
   reducedMotion,
   assets,
 }: {
   road: RoadState;
+  aspect: Aspect;
   reducedMotion: boolean;
   assets: Assets;
 }) {
   const arm = ARM[road.direction];
   const cars = useRef<THREE.Group>(null);
   const head = useRef<THREE.Mesh>(null);
-  const green = road.is_currently_green;
+  const green = aspect === "GREEN";
+  const lamp = aspect === "GREEN" ? "Green" : aspect === "AMBER" ? "Amber" : "Red";
   const count = Math.min(road.vehicle_count, MAX_CARS);
+  const fonts = useFontsVersion();
   const label = useMemo(
     () =>
       makeLabelTexture([
         { text: `${arm?.label ?? ""}  ${road.vehicle_count}`, size: 14, weight: 600 },
       ]),
-    [arm?.label, road.vehicle_count],
+    // fonts: redraw once Manrope has loaded, so the label is not stuck in the fallback face.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [arm?.label, road.vehicle_count, fonts],
   );
   useEffect(() => () => label.texture.dispose(), [label]);
 
@@ -124,7 +136,7 @@ function Approach({
       {/* stop line */}
       <mesh
         geometry={assets.box}
-        material={green ? assets.lineGreen : assets.lineRed}
+        material={assets[`line${lamp}`]}
         scale={[0.92, 0.006, 0.05]}
         position={[0, 0.026, 0.62]}
       />
@@ -134,13 +146,13 @@ function Approach({
       <mesh
         ref={head}
         geometry={assets.head}
-        material={green ? assets.headGreen : assets.headRed}
+        material={assets[`head${lamp}`]}
         position={[0.62, 0.46, 0.62]}
       />
       <sprite
         position={[0.62, 0.46, 0.62]}
         scale={[0.55, 0.55, 1]}
-        material={green ? assets.haloGreen : assets.haloRed}
+        material={assets[`halo${lamp}`]}
         raycast={() => null}
       />
 
@@ -159,6 +171,19 @@ function Approach({
 function Scene({ roads, reducedMotion }: { roads: RoadState[]; reducedMotion: boolean }) {
   const assets = useMemo(buildAssets, []);
   useEffect(() => () => disposeAssets(assets), [assets]);
+  const now = useSecondClock();
+  const aspects = useMemo(
+    () =>
+      junctionAspects(
+        roads.map((r) => ({
+          id: r.road_id,
+          isGreen: r.is_currently_green,
+          startedAtMs: r.phase_started_at ? Date.parse(r.phase_started_at) : 0,
+        })),
+        now,
+      ),
+    [roads, now],
+  );
 
   return (
     <>
@@ -184,7 +209,13 @@ function Scene({ roads, reducedMotion }: { roads: RoadState[]; reducedMotion: bo
       </mesh>
 
       {roads.map((road) => (
-        <Approach key={road.road_id} road={road} reducedMotion={reducedMotion} assets={assets} />
+        <Approach
+          key={road.road_id}
+          road={road}
+          aspect={aspects.get(road.road_id) ?? "RED"}
+          reducedMotion={reducedMotion}
+          assets={assets}
+        />
       ))}
 
       <OrbitControls

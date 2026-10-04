@@ -27,6 +27,8 @@ export type Pricing = {
   factor?: number;
   /** Junction id to the time (ms) its blocked lane clears. */
   incidentEnds: ReadonlyMap<number, number>;
+  /** Share of normal capacity every approach has right now (wet roads), applied to a trip that starts now. */
+  capacityScale?: number;
 };
 
 const INDEX_BY_ID = new Map(SEED_JUNCTIONS.map((j, index) => [j.id, index]));
@@ -100,6 +102,7 @@ export function useDirections(
       for (const [id, until] of pricing.incidentEnds) if (until > arrivalMs) incidents.add(id);
       return forecastJunction(index, new Date(arrivalMs), {
         ...(pricing.factor === undefined ? {} : { factor: pricing.factor }),
+        ...(pricing.capacityScale === undefined ? {} : { capacityScale: pricing.capacityScale }),
         incidents,
       });
     };

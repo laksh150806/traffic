@@ -151,6 +151,19 @@ describe("liveAsForecast", () => {
     expect(f.cycle).toBe(100);
   });
 
+  it("puts the per-arm figures in the model's arm order, whatever order the rows arrive in", () => {
+    // Rows arrive in display order: north, east, south, west.
+    const f = liveAsForecast(summary(1, "A", "Z"), [
+      model(1, { direction: "NORTH", queue_now: 1, predicted_delay_adaptive_sec: 11 }),
+      model(3, { direction: "EAST", queue_now: 3, predicted_delay_adaptive_sec: 33 }),
+      model(2, { direction: "SOUTH", queue_now: 2, predicted_delay_adaptive_sec: 22 }),
+      model(4, { direction: "WEST", queue_now: 4, predicted_delay_adaptive_sec: 44 }),
+    ])!;
+    // Model order is north, south, east, west.
+    expect(f.approachQueues).toEqual([1, 2, 3, 4]);
+    expect(f.approachDelayAdaptive).toEqual([11, 22, 33, 44]);
+  });
+
   it("reports the longest queue and over-capacity arms", () => {
     const f = liveAsForecast(summary(1, "A", "Z"), [
       model(1, { queue_now: 5 }),

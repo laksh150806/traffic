@@ -1,4 +1,3 @@
-import { AnimatePresence, motion } from "motion/react";
 import { Play, Square } from "lucide-react";
 import { AnimatedNumber } from "@/components/space/AnimatedNumber";
 import type { Caption } from "@/components/ops/useDemoTour";
@@ -16,20 +15,17 @@ export function TourCaption({ caption, onStop }: { caption: Caption; onStop: () 
           <p className="meta-label mt-1">{caption.phase}</p>
         </div>
         <div className="min-w-0 flex-1">
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={caption.phase + caption.title.replace(/\d+/g, "#")}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-            >
-              <p className="font-display text-sm font-semibold leading-snug">{caption.title}</p>
-              <p className="mt-1 hidden text-xs leading-relaxed text-muted-foreground @md:block">
-                {caption.body}
-              </p>
-            </motion.div>
-          </AnimatePresence>
+          {/* A CSS fade on arrival, not an exit animation: the text must always be the latest, even
+              if the page is in a background tab where animation frames do not run. */}
+          <div
+            key={caption.phase + caption.title.replace(/\d+/g, "#")}
+            className="animate-in fade-in slide-in-from-bottom-1 duration-200"
+          >
+            <p className="font-display text-sm font-semibold leading-snug">{caption.title}</p>
+            <p className="mt-1 hidden text-xs leading-relaxed text-muted-foreground @md:block">
+              {caption.body}
+            </p>
+          </div>
         </div>
         {caption.jammed !== null ? (
           <div className="hidden text-right sm:block">

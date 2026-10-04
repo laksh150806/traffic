@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Camera, Radio } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TiltCard } from "@/components/space/TiltCard";
 import type { RoadState } from "@/lib/traffic-data";
+import { junctionAspects } from "@/lib/signal-aspect";
+import { useSecondClock } from "@/components/space/useFontsReady";
 
 const DIRECTION_ICON = {
   NORTH: ArrowUp,
@@ -17,18 +19,20 @@ function congestionBar(count: number, capacity: number) {
   return { pct, tone };
 }
 
-/** Ticking clock so the running green phase counts down smoothly. */
-function useSecondsClock() {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
-  return now;
-}
-
 export function RoadList({ roads, loading }: { roads: RoadState[]; loading: boolean }) {
-  const now = useSecondsClock();
+  const now = useSecondClock();
+  const aspects = useMemo(
+    () =>
+      junctionAspects(
+        roads.map((r) => ({
+          id: r.road_id,
+          isGreen: r.is_currently_green,
+          startedAtMs: r.phase_started_at ? Date.parse(r.phase_started_at) : 0,
+        })),
+        now,
+      ),
+    [roads, now],
+  );
 
   if (loading) {
     return (
@@ -57,22 +61,32 @@ export function RoadList({ roads, loading }: { roads: RoadState[]; loading: bool
         const elapsed = road.phase_started_at
           ? Math.max(0, Math.floor((now - new Date(road.phase_started_at).getTime()) / 1000))
           : 0;
-        const remaining = road.is_currently_green
-          ? Math.max(0, road.green_duration_sec - elapsed)
-          : null;
+        const aspect = aspects.get(road.road_id) ?? "RED";
+        // The green was handed over but the clearance (amber, all red) is still running.
+        const starting = road.is_currently_green && aspect === "RED";
+        const remaining =
+          aspect === "GREEN" ? Math.max(0, road.green_duration_sec - elapsed) : null;
         return (
           <TiltCard
             key={road.road_id}
             max={3}
             className={`glass-inset transition-data p-3 ${
-              road.is_currently_green ? "shadow-[0_0_28px_-10px_var(--signal-low)]" : ""
+              aspect === "GREEN"
+                ? "shadow-[0_0_28px_-10px_var(--signal-low)]"
+                : aspect === "AMBER"
+                  ? "shadow-[0_0_28px_-10px_var(--signal-moderate)]"
+                  : ""
             }`}
           >
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-2.5">
                 <span
                   className={`flex h-8 w-8 items-center justify-center rounded-md border border-border bg-card ${
-                    road.is_currently_green ? "text-signal-low" : "text-muted-foreground"
+                    aspect === "GREEN"
+                      ? "text-signal-low"
+                      : aspect === "AMBER"
+                        ? "text-signal-moderate"
+                        : "text-muted-foreground"
                   }`}
                 >
                   <Icon className="h-4 w-4" />
@@ -97,12 +111,24 @@ export function RoadList({ roads, loading }: { roads: RoadState[]; loading: bool
                 </span>
                 <span
                   className={`h-3 w-3 rounded-full transition-data ${
-                    road.is_currently_green
+                    aspect === "GREEN"
                       ? "bg-signal-low shadow-[0_0_10px_2px_var(--signal-low)] signal-live"
-                      : "bg-muted"
+                      : aspect === "AMBER"
+                        ? "bg-signal-moderate shadow-[0_0_10px_2px_var(--signal-moderate)]"
+                        : starting
+                          ? "bg-signal-high/60"
+                          : "bg-muted"
                   }`}
                   role="img"
-                  aria-label={road.is_currently_green ? "Green now" : "Red"}
+                  aria-label={
+                    aspect === "GREEN"
+                      ? "Green now"
+                      : aspect === "AMBER"
+                        ? "Amber"
+                        : starting
+                          ? "Red, green is about to start"
+                          : "Red"
+                  }
                 />
               </div>
             </div>
@@ -119,7 +145,9 @@ export function RoadList({ roads, loading }: { roads: RoadState[]; loading: bool
                 </div>
               </div>
               <div>
-                <p className="meta-label">{remaining !== null ? "Green now" : "Next green"}</p>
+                <p className="meta-label">
+                  {remaining !== null ? "Green now" : starting ? "Green starting" : "Next green"}
+                </p>
                 <p className="numeric text-xl text-primary transition-data">
                   {road.green_duration_sec}
                   <span className="ml-0.5 text-xs text-muted-foreground">s</span>

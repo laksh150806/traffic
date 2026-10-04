@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { CloudMoon, Siren, SunMedium, Timer } from "lucide-react";
+import { CloudMoon, CloudRain, Siren, SunMedium, Timer } from "lucide-react";
 import {
   clearIncidents,
   getActiveIncidents,
@@ -13,6 +13,7 @@ const MODES: Array<{ id: ScenarioMode; label: string; hint: string; icon: typeof
   { id: "auto", label: "Time of day", hint: "Follows Chennai's clock", icon: Timer },
   { id: "rush", label: "Rush hour", hint: "Peak demand everywhere", icon: SunMedium },
   { id: "night", label: "Overnight", hint: "Light traffic", icon: CloudMoon },
+  { id: "rain", label: "Heavy rain", hint: "Wet roads, 20% less capacity", icon: CloudRain },
 ];
 
 /**
@@ -32,8 +33,11 @@ export function ScenarioPanel({
   const [incidents, setIncidents] = useState<number[]>([]);
 
   useEffect(() => {
-    setMode(getScenarioMode());
-    const read = () => setIncidents(getActiveIncidents());
+    // The mode can also be changed from the command palette, so follow the engine, not just clicks here.
+    const read = () => {
+      setMode(getScenarioMode());
+      setIncidents(getActiveIncidents());
+    };
     read();
     const id = window.setInterval(read, 2000);
     return () => window.clearInterval(id);
@@ -51,13 +55,14 @@ export function ScenarioPanel({
     <section className="panel p-4">
       <h2 className="text-lg font-semibold">Scenario</h2>
       <p className="mb-3 text-xs text-muted-foreground">
-        Change the demand the simulator feeds the signals, then watch the plan adapt.
+        Change the demand the simulator feeds the signals, or wet the roads, then watch the plan
+        adapt.
       </p>
 
       <div
         role="group"
         aria-label="Demand level"
-        className="glass-chip grid grid-cols-3 gap-1 rounded-2xl p-1"
+        className="glass-chip grid grid-cols-2 gap-1 rounded-2xl p-1"
       >
         {MODES.map(({ id, label, hint, icon: Icon }) => (
           <button

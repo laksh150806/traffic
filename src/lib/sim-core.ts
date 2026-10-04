@@ -33,13 +33,15 @@ export function levelFor(avgSaturation: number, maxQueue = 0): CongestionLevel {
   return "LOW";
 }
 
+type Knots = ReadonlyArray<readonly [hour: number, factor: number]>;
+
 /**
- * Chennai (UTC+5:30) demand shaping through the day: plateaus at the morning
+ * Chennai (UTC+5:30) demand shaping through a working day: plateaus at the morning
  * peak, midday, the evening peak and the evening shoulder, joined by ramps so
- * the demand never jumps between two consecutive minutes. Not yet split by
- * weekday; it is a synthetic curve until it is calibrated on counted data.
+ * the demand never jumps between two consecutive minutes. Synthetic until it is
+ * calibrated on counted data.
  */
-const DEMAND_KNOTS: ReadonlyArray<readonly [hour: number, factor: number]> = [
+const WEEKDAY_KNOTS: Knots = [
   [0, 0.45],
   [6.5, 0.45],
   [8, 1.75],
@@ -54,24 +56,60 @@ const DEMAND_KNOTS: ReadonlyArray<readonly [hour: number, factor: number]> = [
   [24, 0.45],
 ];
 
-export function timeOfDayFactor(now: Date) {
-  const istHour = (now.getUTCHours() + 5.5 + now.getUTCMinutes() / 60) % 24;
-  for (let i = 1; i < DEMAND_KNOTS.length; i += 1) {
-    const [h1, f1] = DEMAND_KNOTS[i] as readonly [number, number];
-    if (istHour <= h1) {
-      const [h0, f0] = DEMAND_KNOTS[i - 1] as readonly [number, number];
-      return h1 === h0 ? f1 : f0 + ((f1 - f0) * (istHour - h0)) / (h1 - h0);
+/**
+ * Saturday and Sunday: no commuter peaks. Traffic builds through the late morning to a plateau
+ * around lunch and the shops, eases, then rises to an evening outing peak that stays below the
+ * weekday rush. Same caveat: a plausible shape, not a measurement.
+ */
+const WEEKEND_KNOTS: Knots = [
+  [0, 0.45],
+  [7, 0.45],
+  [10, 0.9],
+  [11.5, 1.25],
+  [14, 1.25],
+  [16.5, 1.05],
+  [18, 1.55],
+  [20.5, 1.55],
+  [22, 0.8],
+  [23.5, 0.45],
+  [24, 0.45],
+];
+
+/** Chennai wall-clock hour (0 to 24) and whether the day there is a Saturday or Sunday. */
+export function istClock(now: Date) {
+  const ist = new Date(now.getTime() + 5.5 * 3600 * 1000);
+  const day = ist.getUTCDay();
+  return {
+    hour: ist.getUTCHours() + ist.getUTCMinutes() / 60,
+    weekend: day === 0 || day === 6,
+  };
+}
+
+function interpolate(knots: Knots, hour: number) {
+  for (let i = 1; i < knots.length; i += 1) {
+    const [h1, f1] = knots[i] as readonly [number, number];
+    if (hour <= h1) {
+      const [h0, f0] = knots[i - 1] as readonly [number, number];
+      return h1 === h0 ? f1 : f0 + ((f1 - f0) * (hour - h0)) / (h1 - h0);
     }
   }
   return 0.45;
 }
 
-/** Average of the demand curve over a whole day: what a fixed timer is set up for. */
+export function timeOfDayFactor(now: Date) {
+  const { hour, weekend } = istClock(now);
+  return interpolate(weekend ? WEEKEND_KNOTS : WEEKDAY_KNOTS, hour);
+}
+
+/**
+ * Average of the demand curve over a whole week: what a fixed timer is set up for. A real timer
+ * runs one plan all week, so it is tuned to the mean of five working days and two weekend days.
+ */
 export const MEAN_DAY_FACTOR = (() => {
-  const base = Date.UTC(2026, 0, 5, 0, 0) - 5.5 * 3600 * 1000;
+  const monday = Date.UTC(2026, 0, 5, 0, 0) - 5.5 * 3600 * 1000;
   let sum = 0;
-  const steps = 96;
-  for (let i = 0; i < steps; i += 1) sum += timeOfDayFactor(new Date(base + i * 15 * 60 * 1000));
+  const steps = 7 * 96;
+  for (let i = 0; i < steps; i += 1) sum += timeOfDayFactor(new Date(monday + i * 15 * 60 * 1000));
   return sum / steps;
 })();
 
@@ -101,6 +139,12 @@ export function approachDemandVph(args: {
     (args.demandBoost ?? 1)
   );
 }
+
+/**
+ * Share of normal saturation flow left on wet roads. Drivers leave bigger gaps and slow down in
+ * heavy rain; the HCM puts the loss at roughly 10 to 20 percent, so the top of that range is used.
+ */
+export const RAIN_CAPACITY_FACTOR = 0.8;
 
 /** Share of normal capacity left on the approach where a lane is blocked. */
 export const INCIDENT_CAPACITY_FACTOR = 0.3;
@@ -193,7 +237,14 @@ export const MAX_PHASE_SEC = 90;
  * Extra pressure another approach needs before it pre-empts a running green
  * that has already served its minimum. Prevents phase flapping.
  */
-export const PREEMPT_MARGIN = 0.25;
+export const PREEMPT_MARGIN = 0.8;
+/**
+ * A running green cannot be pre-empted by pressure until it has held this share of the green it
+ * was allocated (at least MIN_PHASE_SEC, at most MAX_HOLD_SEC). Every phase change costs lost time
+ * in which nothing discharges, so changing sooner than that gives away capacity.
+ */
+export const HOLD_FRACTION = 0.6;
+export const MAX_HOLD_SEC = 30;
 /** No approach waits on red longer than this once the running phase has served its minimum. */
 export const MAX_RED_SEC = 120;
 /**
@@ -273,10 +324,11 @@ export function decidePhase(approaches: PhaseApproach[], nowMs: number): PhaseDe
 
   const servedGreen = elapsed >= allocated;
   const forcedAfter = Math.max(MIN_PHASE_SEC, Math.min(allocated, FORCED_HANDOVER_SEC));
+  const holdFor = Math.min(MAX_HOLD_SEC, Math.max(MIN_PHASE_SEC, allocated * HOLD_FRACTION));
   const preempted =
     !!current &&
     ((overdue !== null && elapsed >= forcedAfter) ||
-      (elapsed >= MIN_PHASE_SEC && challengerScore > current.pressure + PREEMPT_MARGIN));
+      (elapsed >= holdFor && challengerScore > current.pressure + PREEMPT_MARGIN));
 
   if (current && !servedGreen && !preempted) return null;
 

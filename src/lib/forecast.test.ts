@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { demoFetchRoadStates } from "@/lib/demo-engine";
 import {
   dayProfile,
+  findPeaks,
   forecastAsSummary,
   forecastJunction,
   forecastNetwork,
@@ -89,5 +90,77 @@ describe("forecast", () => {
     const summary = forecastAsSummary(forecastJunction(0, istDate(18)));
     expect(summary.junction_id).toBe(SEED_JUNCTIONS[0]!.id);
     expect(["LOW", "MODERATE", "HIGH"]).toContain(summary.congestion_level);
+  });
+});
+
+describe("findPeaks", () => {
+  const at = (day: number, hour: number) =>
+    new Date(Date.UTC(2026, 9, day) + (hour - 5.5) * 3600_000);
+  const hourOf = (from: Date, minutes: number) =>
+    istHourOf(new Date(from.getTime() + minutes * 60_000));
+
+  it("finds the commuter peaks on a working day", () => {
+    const from = at(5, 6); // Monday 6 am
+    const peaks = findPeaks(from);
+    expect(hourOf(from, peaks.morning)).toBeGreaterThanOrEqual(8);
+    expect(hourOf(from, peaks.morning)).toBeLessThanOrEqual(10);
+    expect(hourOf(from, peaks.evening)).toBeGreaterThanOrEqual(17.5);
+    expect(hourOf(from, peaks.evening)).toBeLessThanOrEqual(19.5);
+  });
+
+  it("looks ahead to Monday's rush when asked on a Sunday night", () => {
+    const from = at(4, 23); // Sunday 11 pm
+    const peaks = findPeaks(from);
+    expect(hourOf(from, peaks.morning)).toBeGreaterThanOrEqual(8);
+    expect(hourOf(from, peaks.morning)).toBeLessThanOrEqual(10);
+  });
+
+  it("finds the lunch and evening-outing peaks within a weekend", () => {
+    const from = at(3, 6); // Saturday 6 am, the next 24 h are Saturday and early Sunday
+    const peaks = findPeaks(from);
+    expect(hourOf(from, peaks.morning)).toBeGreaterThanOrEqual(11);
+    expect(hourOf(from, peaks.evening)).toBeGreaterThanOrEqual(18);
+    expect(hourOf(from, peaks.evening)).toBeLessThanOrEqual(20.5);
+  });
+
+  it("returns whole steps inside the next 24 hours", () => {
+    const p = findPeaks(at(5, 12));
+    for (const m of [p.morning, p.evening]) {
+      expect(m % 5).toBe(0);
+      expect(m).toBeGreaterThan(0);
+      expect(m).toBeLessThanOrEqual(24 * 60);
+    }
+  });
+});
+
+describe("per-arm delays", () => {
+  it("lists four arms and their flow-weighted mean is the junction figure", () => {
+    const f = forecastJunction(10, istDate(18, 30));
+    expect(f.approachDelayAdaptive).toHaveLength(4);
+    expect(f.approachDelayFixed).toHaveLength(4);
+    expect(Math.min(...f.approachDelayAdaptive)).toBeGreaterThan(0);
+  });
+});
+
+describe("wet roads", () => {
+  it("lengthen waits and raise saturation for the same demand", () => {
+    const at = istDate(13);
+    let worse = 0;
+    for (let i = 0; i < SEED_JUNCTIONS.length; i += 1) {
+      const dry = forecastJunction(i, at);
+      const wet = forecastJunction(i, at, { capacityScale: 0.8 });
+      expect(wet.saturation).toBeGreaterThanOrEqual(dry.saturation);
+      expect(wet.delayAdaptive).toBeGreaterThanOrEqual(dry.delayAdaptive);
+      if (wet.delayAdaptive > dry.delayAdaptive) worse += 1;
+    }
+    expect(worse).toBeGreaterThan(SEED_JUNCTIONS.length * 0.9);
+  });
+
+  it("leave the fixed timer as it was, since a real timer does not know it is raining", () => {
+    const at = istDate(9);
+    const dry = forecastJunction(5, at);
+    const wet = forecastJunction(5, at, { capacityScale: 0.8 });
+    // The fixed plan is the same; only the capacity it meets has changed, so its wait rises too.
+    expect(wet.delayFixed).toBeGreaterThan(dry.delayFixed);
   });
 });

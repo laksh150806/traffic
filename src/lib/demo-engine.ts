@@ -11,6 +11,7 @@ import { forecastJunction } from "@/lib/forecast";
 import { FIXED_GREEN, clamp, solveJunction, type ApproachInput } from "@/lib/traffic-model";
 import {
   INCIDENT_CAPACITY_FACTOR,
+  RAIN_CAPACITY_FACTOR,
   approachPressure,
   decidePhase,
   effectiveGreenSeconds,
@@ -98,7 +99,7 @@ type CctvRow = {
   atMs: number;
 };
 
-export type ScenarioMode = "auto" | "rush" | "night";
+export type ScenarioMode = "auto" | "rush" | "night" | "rain";
 
 type World = {
   roads: Road[];
@@ -207,9 +208,11 @@ function buildWorld(nowMs: number): World {
  */
 function seedQueues(w: World, nowMs: number) {
   const factor = getScenarioFactor();
+  const capacityScale = getScenarioCapacity();
   SEED_JUNCTIONS.forEach((junction, jIndex) => {
     const expected = forecastJunction(jIndex, new Date(nowMs), {
       ...(factor === undefined ? {} : { factor }),
+      capacityScale,
     });
     (w.roadsByJunction.get(junction.id) ?? []).forEach((road, a) => {
       const state = w.sim.get(road.roadId);
@@ -243,15 +246,24 @@ function demandFactor(nowMs: number) {
   return getScenarioFactor() ?? timeOfDayFactor(new Date(nowMs));
 }
 
-/** Share of capacity the road has left: a blocked lane cuts the busiest arm of the junction. */
+/**
+ * Share of capacity the road has left: wet roads cut every approach, and a blocked lane cuts the
+ * busiest arm of its junction as well.
+ */
 function capacityFactorFor(road: Road, nowMs: number) {
+  const wet = getScenarioCapacity();
   const until = scenario.incidents.get(road.junctionId);
-  if (until === undefined) return 1;
+  if (until === undefined) return wet;
   if (until <= nowMs) {
     scenario.incidents.delete(road.junctionId);
-    return 1;
+    return wet;
   }
-  return road.roadId === incidentRoadId(road.junctionIndex) ? INCIDENT_CAPACITY_FACTOR : 1;
+  return wet * (road.roadId === incidentRoadId(road.junctionIndex) ? INCIDENT_CAPACITY_FACTOR : 1);
+}
+
+/** The capacity share a forced scenario applies to every approach (rain), or 1. */
+export function getScenarioCapacity(): number {
+  return scenario.mode === "rain" ? RAIN_CAPACITY_FACTOR : 1;
 }
 
 /** Count green seconds for every approach that is currently green, up to nowMs. */

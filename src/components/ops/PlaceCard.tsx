@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
 import { ArrowRightFromLine, ArrowRightToLine, Radio } from "lucide-react";
 import { formatIstTime, istDate, istHourOf, type JunctionForecast } from "@/lib/forecast";
 import type { JunctionSummary, RoadState } from "@/lib/traffic-types";
+import { isClearing } from "@/lib/signal-aspect";
+import { useSecondClock } from "@/components/space/useFontsReady";
 
 const LEVEL_STYLE: Record<string, string> = {
   LOW: "border-signal-low/40 bg-signal-low/10 text-signal-low",
@@ -23,28 +24,38 @@ type DayPoint = { hour: number; saturation: number; level: string };
 
 const hourLabel = (hour: number) => formatIstTime(istDate(hour));
 
-function useSecond() {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
-  return now;
-}
-
 /** "North has the green for 12 more seconds", from the live controller state. */
 function SignalNow({ roads }: { roads: RoadState[] }) {
-  const now = useSecond();
+  const now = useSecondClock();
   const green = roads.find((r) => r.is_currently_green);
   if (!green) return null;
   const started = green.phase_started_at ? new Date(green.phase_started_at).getTime() : now;
+  const clearing = isClearing(
+    roads.map((r) => ({
+      id: r.road_id,
+      isGreen: r.is_currently_green,
+      startedAtMs: r.phase_started_at ? Date.parse(r.phase_started_at) : 0,
+    })),
+    now,
+  );
   const left = Math.max(0, Math.round(green.green_duration_sec - (now - started) / 1000));
   const dir = green.direction.charAt(0) + green.direction.slice(1).toLowerCase();
   return (
     <p className="mt-3 flex items-center gap-2 text-sm">
-      <Radio className="h-4 w-4 text-signal-low signal-live" aria-hidden />
+      <Radio
+        className={`h-4 w-4 ${clearing ? "text-signal-moderate" : "text-signal-low signal-live"}`}
+        aria-hidden
+      />
       <span>
-        <span className="font-medium">{dir}</span> has the green, {left} s left
+        {clearing ? (
+          <>
+            Changing over, <span className="font-medium">{dir}</span> is next
+          </>
+        ) : (
+          <>
+            <span className="font-medium">{dir}</span> has the green, {left} s left
+          </>
+        )}
       </span>
     </p>
   );
@@ -58,6 +69,7 @@ export function PlaceCard({
   isForecast,
   fromLiveModel,
   roads,
+  weekend,
   onDirectionsFrom,
   onDirectionsTo,
 }: {
@@ -69,6 +81,8 @@ export function PlaceCard({
   /** True when the figures come from the running model rather than the steady-state forecast. */
   fromLiveModel: boolean;
   roads: RoadState[];
+  /** Whether the moment being looked at falls on a Saturday or Sunday in Chennai. */
+  weekend: boolean;
   onDirectionsFrom: () => void;
   onDirectionsTo: () => void;
 }) {
@@ -130,7 +144,7 @@ export function PlaceCard({
 
       <div className="mt-4">
         <div className="flex items-baseline justify-between">
-          <p className="meta-label">A typical day</p>
+          <p className="meta-label">{weekend ? "A typical weekend day" : "A typical weekday"}</p>
           <p className="text-xs text-muted-foreground">Busiest around {hourLabel(peak.hour)}</p>
         </div>
         <div

@@ -204,27 +204,27 @@ ORDER BY z.zone, p.period
 
 zone         | period    | avg_vehicles_per_half_hour
 -------------+-----------+---------------------------
-Central      | 1 night   | 105
+Central      | 1 night   | 111
 Central      | 2 morning | 307
 Central      | 3 midday  | 223
 Central      | 4 evening | 341
-GST Corridor | 1 night   | 93
+GST Corridor | 1 night   | 100
 GST Corridor | 2 morning | 272
 GST Corridor | 3 midday  | 197
 GST Corridor | 4 evening | 301
-North        | 1 night   | 106
+North        | 1 night   | 111
 North        | 2 morning | 311
 North        | 3 midday  | 226
 North        | 4 evening | 345
-Outer        | 1 night   | 76
+Outer        | 1 night   | 86
 Outer        | 2 morning | 224
 Outer        | 3 midday  | 162
 Outer        | 4 evening | 249
-South        | 1 night   | 89
+South        | 1 night   | 98
 South        | 2 morning | 263
 South        | 3 midday  | 190
 South        | 4 evening | 291
-West         | 1 night   | 90
+West         | 1 night   | 97
 West         | 2 morning | 263
 West         | 3 midday  | 192
 West         | 4 evening | 292

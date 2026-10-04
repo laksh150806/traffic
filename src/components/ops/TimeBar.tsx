@@ -1,5 +1,13 @@
+import { useMemo } from "react";
 import { Clock, RotateCcw } from "lucide-react";
-import { dayLabel, formatIstTime, minutesUntilIst } from "@/lib/forecast";
+import {
+  dayLabel,
+  findPeaks,
+  formatIstTime,
+  istHourOf,
+  minutesUntilIst,
+  peakLabel,
+} from "@/lib/forecast";
 
 export const MAX_OFFSET_MIN = 24 * 60;
 const STEP_MIN = 5;
@@ -21,10 +29,17 @@ export function TimeBar({
 }) {
   const live = offsetMin === 0;
   const at = live ? clock : new Date(now.getTime() + offsetMin * 60_000);
+  // The busiest moments are found from the demand curve, so on a weekend they move to the lunch
+  // and evening-outing peaks instead of the commuter rush.
+  const peaks = useMemo(() => findPeaks(now), [now]);
+  const peakChip = (minutes: number) => {
+    const when = new Date(now.getTime() + minutes * 60_000);
+    return { label: peakLabel(istHourOf(when)), minutes, time: formatIstTime(when) };
+  };
   const shortcuts = [
-    { label: "Morning peak", minutes: minutesUntil(now, 9) },
-    { label: "Evening peak", minutes: minutesUntil(now, 18.5) },
-    { label: "Midnight", minutes: minutesUntil(now, 0) },
+    peakChip(peaks.morning),
+    peakChip(peaks.evening),
+    { label: "Midnight", minutes: minutesUntil(now, 0), time: "12:00 am" },
   ];
 
   return (
@@ -54,6 +69,8 @@ export function TimeBar({
           <button
             key={s.label}
             type="button"
+            title={s.time}
+            aria-label={`${s.label}, ${s.time}`}
             onClick={() => onChange(s.minutes)}
             className="glass-chip min-h-9 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
           >

@@ -33,19 +33,33 @@ import { ModelPanel } from "@/components/traffic/ModelPanel";
 import { ScenarioPanel } from "@/components/traffic/ScenarioPanel";
 import { Attention } from "@/components/ops/Attention";
 import { DirectionsPanel } from "@/components/ops/DirectionsPanel";
+import { CommandPalette, type PaletteAction } from "@/components/ops/CommandPalette";
 import { TourCaption, TourInvite } from "@/components/ops/DemoTour";
 import { useDemoTour } from "@/components/ops/useDemoTour";
 import type { Endpoint } from "@/components/ops/OpsMap";
 import { PlaceCard } from "@/components/ops/PlaceCard";
+import { ReplayPanel } from "@/components/ops/ReplayPanel";
+import { replayJunction } from "@/lib/replay";
+import { csvFileName, networkCsv } from "@/lib/export";
+import { decodeView, encodeView } from "@/lib/share";
 import { SearchBox } from "@/components/ops/SearchBox";
 import { TimeBar } from "@/components/ops/TimeBar";
 import { useDirections, type Pricing } from "@/components/ops/useDirections";
 import { AnimatedNumber } from "@/components/space/AnimatedNumber";
 import { Skeleton } from "@/components/ui/skeleton";
-import { DATA_MODE } from "@/lib/data-mode";
-import { demoAdvance, demoTick, getIncidentEnds, getScenarioFactor } from "@/lib/demo-engine";
+import { BROWSER_DRIVES_LOOP, DATA_MODE } from "@/lib/data-mode";
+import {
+  demoAdvance,
+  demoTick,
+  getIncidentEnds,
+  getScenarioCapacity,
+  getScenarioFactor,
+  setScenarioMode,
+  type ScenarioMode,
+} from "@/lib/demo-engine";
 import {
   dayProfile,
+  findPeaks,
   forecastAsSummary,
   forecastNetwork,
   liveAsForecast,
@@ -53,6 +67,7 @@ import {
   type JunctionForecast,
 } from "@/lib/forecast";
 import { SEED_JUNCTIONS } from "@/lib/seed-junctions";
+import { istClock } from "@/lib/sim-core";
 import { advanceSignals, runTrafficTick } from "@/lib/traffic.functions";
 import {
   fetchCameraTiles,
@@ -208,13 +223,18 @@ function Dashboard() {
   const incidentEnds = isDemo ? getIncidentEnds() : NO_INCIDENTS;
   const incidentKey = [...incidentEnds].map(([id, until]) => `${id}:${until}`).join(",");
   const scenarioFactor = isDemo && !isForecast ? getScenarioFactor() : undefined;
+  const scenarioCapacity = isDemo && !isForecast ? getScenarioCapacity() : 1;
   const forecastOptions = useMemo<ForecastOptions>(() => {
     const incidents = new Set<number>();
     for (const [id, until] of incidentEnds) if (until > at.getTime()) incidents.add(id);
-    return { ...(scenarioFactor === undefined ? {} : { factor: scenarioFactor }), incidents };
+    return {
+      ...(scenarioFactor === undefined ? {} : { factor: scenarioFactor }),
+      ...(scenarioCapacity === 1 ? {} : { capacityScale: scenarioCapacity }),
+      incidents,
+    };
     // incidentEnds is rebuilt every render; incidentKey says whether it changed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [at, incidentKey, scenarioFactor]);
+  }, [at, incidentKey, scenarioFactor, scenarioCapacity]);
   const forecast = useMemo(
     () =>
       new Map<number, JunctionForecast>(
@@ -225,11 +245,12 @@ function Dashboard() {
   const pricing = useMemo<Pricing>(
     () => ({
       ...(scenarioFactor === undefined ? {} : { factor: scenarioFactor }),
+      ...(scenarioCapacity === 1 ? {} : { capacityScale: scenarioCapacity }),
       incidentEnds,
     }),
     // incidentEnds is rebuilt every render; incidentKey says whether it changed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [incidentKey, scenarioFactor],
+    [incidentKey, scenarioFactor, scenarioCapacity],
   );
 
   // What the map, lists and cards show: live readings now, the model's forecast for later.
@@ -244,17 +265,20 @@ function Dashboard() {
     const busiest = [...junctionsQuery.data].sort(
       (a, b) => b.avg_vehicle_count - a.avg_vehicle_count,
     )[0];
-    if (busiest) setSelectedId(busiest.junction_id);
+    // A functional update: a junction chosen a moment ago (from a shared link) may not be in this
+    // render yet, and must not be overwritten by the default.
+    if (busiest) setSelectedId((current) => current ?? busiest.junction_id);
   }, [selectedId, junctionsQuery.data]);
 
   const activeId = selectedId ?? junctions[0]?.junction_id ?? null;
   const selected = junctions.find((j) => j.junction_id === activeId) ?? junctions[0];
   const isLive = activeId !== null && activeId > 0;
 
+  const weekend = istClock(at).weekend;
   const profile = useMemo(() => {
     const index = SEED_JUNCTIONS.findIndex((j) => j.id === selected?.junction_id);
-    return index >= 0 ? dayProfile(index) : [];
-  }, [selected?.junction_id]);
+    return index >= 0 ? dayProfile(index, weekend) : [];
+  }, [selected?.junction_id, weekend]);
 
   // keepPreviousData: switching junction keeps the old panels until the new ones arrive,
   // instead of flashing skeletons and tearing down the 3D scene.
@@ -314,7 +338,7 @@ function Dashboard() {
     setBusy(true);
     try {
       if (isDemo) demoTick();
-      else await liveTick({});
+      else if (BROWSER_DRIVES_LOOP) await liveTick({});
       refreshAll();
     } catch (error) {
       console.error("Traffic tick failed", error);
@@ -339,7 +363,9 @@ function Dashboard() {
       try {
         const result = isDemo
           ? demoAdvance()
-          : ((await liveAdvance({})) as { switched?: number } | undefined);
+          : BROWSER_DRIVES_LOOP
+            ? ((await liveAdvance({})) as { switched?: number } | undefined)
+            : undefined;
         if (result?.switched) {
           void queryClient.invalidateQueries({ queryKey: ["roads"] });
         }
@@ -415,6 +441,7 @@ function Dashboard() {
       for (const [id, until] of getIncidentEnds()) if (until > when.getTime()) incidents.add(id);
       const all = forecastNetwork(when, {
         ...(factor === undefined || ms > base.getTime() + 300_000 ? {} : { factor }),
+        ...(ms > base.getTime() + 300_000 ? {} : { capacityScale: getScenarioCapacity() }),
         incidents,
       });
       const worst = all.reduce<(typeof all)[number] | null>(
@@ -424,6 +451,7 @@ function Dashboard() {
       const seed = worst ? SEED_JUNCTIONS.find((j) => j.id === worst.junctionId) : undefined;
       return {
         jammed: all.filter((f) => f.level === "HIGH").length,
+        busy: all.filter((f) => f.level === "MODERATE").length,
         total: all.length,
         worst: seed ? { id: seed.id, name: seed.name, zone: seed.zone } : null,
       };
@@ -438,6 +466,20 @@ function Dashboard() {
     select: (id) => {
       setPick(null);
       setSelectedId(id);
+    },
+    replay: (junctionId, ms) => {
+      const index = SEED_JUNCTIONS.findIndex((j) => j.id === junctionId);
+      if (index < 0) return null;
+      const factor = getScenarioFactor();
+      const r = replayJunction(index, ms, {
+        ...(factor === undefined || ms > base.getTime() + 300_000 ? {} : { factor }),
+        ...(ms > base.getTime() + 300_000 ? {} : { capacityScale: getScenarioCapacity() }),
+      });
+      return {
+        waitFixed: r.summary.waitFixed,
+        waitAdaptive: r.summary.waitAdaptive,
+        percent: r.summary.waitChangePercent,
+      };
     },
     showTrip: (fromId, toId) => {
       const a = SEED_JUNCTIONS.find((j) => j.id === fromId);
@@ -454,6 +496,64 @@ function Dashboard() {
       setTab("explore");
     },
   });
+
+  // ---- a link to this exact view, kept in the address bar
+  const restored = useRef(false);
+  useEffect(() => {
+    const shared = decodeView(window.location.search, Date.now());
+    if (shared.junction !== undefined) setSelectedId(shared.junction);
+    if (shared.atMs !== undefined) setTargetMs(shared.atMs);
+    if (shared.from) setFrom(shared.from);
+    if (shared.to) setTo(shared.to);
+    if (shared.tab) setTab(shared.tab);
+    restored.current = true;
+  }, []);
+  const viewQuery = encodeView(
+    {
+      ...(selectedId === null ? {} : { junction: selectedId }),
+      ...(targetMs === null ? {} : { atMs: targetMs }),
+      ...(from ? { from } : {}),
+      ...(to ? { to } : {}),
+      tab,
+    },
+    Date.now(),
+  );
+  useEffect(() => {
+    if (!restored.current || tour.active) return;
+    const url = viewQuery ? `?${viewQuery}` : window.location.pathname;
+    window.history.replaceState(null, "", url);
+  }, [viewQuery, tour.active]);
+
+  const [shareLabel, setShareLabel] = useState("Share view");
+  const shareView = useCallback(() => {
+    const url = new URL(window.location.href);
+    url.search = viewQuery;
+    const done = (text: string) => {
+      setShareLabel(text);
+      window.setTimeout(() => setShareLabel("Share view"), 2200);
+    };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(url.toString()).then(
+        () => done("Link copied"),
+        () => window.prompt("Copy this link", url.toString()),
+      );
+    } else {
+      window.prompt("Copy this link", url.toString());
+    }
+  }, [viewQuery]);
+
+  const exportCsv = useCallback(() => {
+    const csv = networkCsv(junctions, forecast, at);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = href;
+    link.download = csvFileName(at);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(href), 1000);
+  }, [junctions, forecast, at]);
 
   // The card shows the running model's own figures for the present, and the forecast for later,
   // so it never disagrees with the panels beneath it.
@@ -528,6 +628,68 @@ function Dashboard() {
     document.getElementById(`tab-${next}`)?.focus();
   };
 
+  const peaks = useMemo(() => findPeaks(base), [base]);
+  const paletteActions: PaletteAction[] = [
+    ...(isDemo
+      ? [
+          {
+            id: "tour",
+            label: "Play the demo tour",
+            keywords: "demo walkthrough present",
+            run: () => void tour.start(),
+          },
+        ]
+      : []),
+    {
+      id: "peak-am",
+      label: "Show the first busy peak ahead",
+      keywords: "morning rush peak time",
+      hint: "time bar",
+      run: () => setOffset(peaks.morning),
+    },
+    {
+      id: "peak-pm",
+      label: "Show the second busy peak ahead",
+      keywords: "evening rush peak time",
+      hint: "time bar",
+      run: () => setOffset(peaks.evening),
+    },
+    { id: "now", label: "Back to now", keywords: "live present", run: () => setOffset(0) },
+    { id: "explore", label: "Open Explore", run: () => setTab("explore") },
+    {
+      id: "directions",
+      label: "Open Directions",
+      keywords: "trip route plan",
+      run: () => setTab("directions"),
+    },
+    { id: "share", label: "Copy a link to this view", keywords: "share url", run: shareView },
+    {
+      id: "export",
+      label: "Export the network as CSV",
+      keywords: "download report data",
+      run: exportCsv,
+    },
+    ...(isDemo
+      ? (
+          [
+            ["auto", "Scenario: follow the clock", "Time of day"],
+            ["rush", "Scenario: rush hour everywhere", "Rush hour"],
+            ["night", "Scenario: overnight traffic", "Overnight"],
+            ["rain", "Scenario: heavy rain", "Heavy rain"],
+          ] as Array<[ScenarioMode, string, string]>
+        ).map(([mode, label, hint]) => ({
+          id: `scenario-${mode}`,
+          label,
+          keywords: "scenario demand weather",
+          hint,
+          run: () => {
+            setScenarioMode(mode);
+            refreshAll();
+          },
+        }))
+      : []),
+  ];
+
   const backendDown = !isDemo && junctionsQuery.isError && !junctionsQuery.data;
   const emptyDb = !isDemo && junctionsQuery.isSuccess && junctionsQuery.data.length === 0;
 
@@ -539,6 +701,17 @@ function Dashboard() {
         busy={busy}
         mode={DATA_MODE}
         {...(isDemo ? { onPlayDemo: () => void tour.start(), demoPlaying: tour.active } : {})}
+        onShare={shareView}
+        shareLabel={shareLabel}
+        onExport={exportCsv}
+      />
+      <CommandPalette
+        junctions={junctions}
+        actions={paletteActions}
+        onPickJunction={(j) => {
+          setPick(null);
+          setSelectedId(j.junction_id);
+        }}
       />
 
       {backendDown || emptyDb ? (
@@ -579,6 +752,11 @@ function Dashboard() {
             </div>
 
             <div className="map-vignette absolute inset-0 z-[5]" aria-hidden />
+            <p className="sr-only" role="status" aria-live="polite">
+              {selected
+                ? `Selected ${selected.name}, ${selected.congestion_level.toLowerCase()}`
+                : ""}
+            </p>
 
             <div className="hud pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-wrap items-start justify-between gap-3 p-3">
               <div className="pointer-events-auto w-full max-w-[340px]">
@@ -764,6 +942,7 @@ function Dashboard() {
                 isForecast={isForecast}
                 fromLiveModel={liveCard !== undefined}
                 roads={roads}
+                weekend={weekend}
                 onDirectionsFrom={() => directionsFrom("from")}
                 onDirectionsTo={() => directionsFrom("to")}
               />
@@ -776,6 +955,16 @@ function Dashboard() {
                 The panels below show the present moment, not the forecast. Return the time bar to
                 Now to match them to the card above.
               </p>
+            ) : null}
+
+            {selected && isLive ? (
+              <ReplayPanel
+                junctionId={selected.junction_id}
+                startMs={at.getTime()}
+                factor={forecastOptions.factor}
+                capacityScale={forecastOptions.capacityScale}
+                blocked={forecastOptions.incidents?.has(selected.junction_id) ?? false}
+              />
             ) : null}
 
             <section className="panel overflow-hidden">

@@ -12,6 +12,7 @@ import {
 } from "react-leaflet";
 import L from "leaflet";
 import { Minus, Plus } from "lucide-react";
+import { neighbourInDirection, type NavDirection } from "@/lib/map-nav";
 import type { RouteAssessment } from "@/lib/routing";
 import type { JunctionSummary } from "@/lib/traffic-types";
 
@@ -87,7 +88,7 @@ function Camera({
     container.setAttribute("role", "region");
     container.setAttribute(
       "aria-label",
-      "Map of Chennai junctions. Use the search box or the junction list to pick one.",
+      "Map of Chennai junctions. Arrow keys move the map. Hold Shift and press an arrow key to jump to the nearest junction in that direction. The search box and the junction list also pick one.",
     );
   }, [map]);
 
@@ -143,6 +144,49 @@ function Camera({
     else map.flyTo([j.latitude, j.longitude], zoom, { duration: 0.8 });
   }, [selectedId, junctions, routes.length, map]);
 
+  return null;
+}
+
+const NAV_KEYS: Record<string, NavDirection> = {
+  ArrowUp: "up",
+  ArrowDown: "down",
+  ArrowLeft: "left",
+  ArrowRight: "right",
+};
+
+/**
+ * Keyboard route between junctions. The markers are drawn on a canvas and cannot take focus, so
+ * Shift plus an arrow key on the focused map selects the nearest junction that way (plain arrows
+ * still pan the map).
+ */
+function KeyboardNav({
+  junctions,
+  selectedId,
+  onSelect,
+}: Pick<Props, "junctions" | "selectedId" | "onSelect">) {
+  const map = useMap();
+  const latest = useRef({ junctions, selectedId, onSelect });
+  useEffect(() => {
+    latest.current = { junctions, selectedId, onSelect };
+  }, [junctions, selectedId, onSelect]);
+
+  useEffect(() => {
+    const container = map.getContainer();
+    const onKey = (event: KeyboardEvent) => {
+      const direction = NAV_KEYS[event.key];
+      if (!direction || !event.shiftKey) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const { junctions: list, selectedId: current, onSelect: select } = latest.current;
+      const from = list.find((j) => j.junction_id === current);
+      const centre = map.getCenter();
+      const origin = from ?? { latitude: centre.lat, longitude: centre.lng };
+      const next = neighbourInDirection(list, origin, direction);
+      if (next) select(next.junction_id);
+    };
+    container.addEventListener("keydown", onKey, true);
+    return () => container.removeEventListener("keydown", onKey, true);
+  }, [map]);
   return null;
 }
 
@@ -334,6 +378,7 @@ export default function OpsMap({
         routeIndex={routeIndex}
       />
       <ClickToPick pick={pick} onPick={onPick} />
+      <KeyboardNav junctions={junctions} selectedId={selectedId} onSelect={handleSelect} />
       <ZoomButtons />
 
       {/* Alternatives first so the chosen route draws on top. */}

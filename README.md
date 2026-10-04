@@ -20,8 +20,19 @@ It works like a maps app for a traffic control room:
   live count of jammed junctions, the camera stops at the worst junction of each rush hour, then
   a trip is priced across the city. It drives the same controls a person would, so what it shows
   is the real model, played back quickly. Esc stops it.
+- **Replay.** For the selected junction, the same half hour of simulated traffic is run twice,
+  once under its fixed timer and once under the adaptive controller, and drawn as two queues over
+  time with the wait, vehicles through and longest red side by side.
 - **Inspector.** The queue model's numbers for the selected junction, with a 3D junction view
-  of queued vehicles and the signal heads.
+  of queued vehicles and the signal heads. The heads show amber and all-red during each
+  handover, which is the 4 s of lost time the model charges every phase.
+- **Scenarios.** Rush hour, overnight, heavy rain (wet roads cut capacity by a fifth) and a
+  blocked lane, to watch the plan respond. Weekends have their own demand shape.
+- **For a keyboard.** Ctrl or Cmd plus K (or /) opens a palette to find a junction or run a
+  command. On the map, Shift plus an arrow key jumps to the nearest junction in that direction.
+- **Share and export.** The address bar always holds the current view, so _Share view_ copies a
+  link to the same junction, time and trip. _Export CSV_ downloads the whole network at the time
+  on the map.
 
 ## Run it
 
@@ -41,9 +52,10 @@ Other scripts:
 | --------------------- | -------------------------------------------------------------------- |
 | `npm run build`       | Production build                                                     |
 | `npm run preview`     | Serve the production build                                           |
-| `npm test`            | Unit tests (model, simulator, controller, routing, SQL against seed) |
+| `npm test`            | Unit, component and live-loop tests (about 230, a few seconds)       |
 | `npm run test:db`     | Applies every migration to an in-process Postgres and checks it      |
 | `npm run rubric`      | Runs the coursework SQL (`supabase/rubric`) and saves its output     |
+| `npm run control`     | Worker that keeps the live control loop running with no browser open |
 | `npm run build:setup` | Rebuilds `supabase/setup.sql` from the migrations                    |
 | `npm run typecheck`   | TypeScript, strict mode                                              |
 | `npm run lint`        | ESLint and Prettier                                                  |
@@ -92,17 +104,53 @@ them.
    The dashboard scores this against what happens and against the naive guess that the
    queue does not change. The scoring is against the simulator built from the same
    equations, so it shows the model matches its own assumptions, not that it matches roads.
-7. **Phase controller.** Every 2 s it decides whether to keep or switch the green. Minimum
-   8 s, maximum 90 s. A waiting approach pre-empts a running green when its pressure
-   (degree of saturation, plus queue length, plus time spent waiting) beats the current one
-   by 0.25. An approach that has been red for 120 s is served next whatever the pressures,
-   once the running phase has had 20 s, so no arm is starved.
+7. **Phase controller.** Every 2 s it decides whether to keep or switch the green. Each green
+   runs for the time the model allocates it (8 to 90 s). Another approach can pre-empt it only
+   after it has held 60 % of that allocation (at least 8 s, at most 30 s) and only if its
+   pressure (degree of saturation, plus queue length, plus time spent waiting) beats the
+   current one by 0.8. An approach that has been red for 120 s is served next whatever the
+   pressures, once the running phase has had 20 s, so no arm is starved. Every change of
+   green costs 4 s in which nothing discharges, which the signal heads show as amber then
+   all red.
 
 ### What the numbers say
 
-Against a timer set for average traffic, the adaptive plan predicts a wait about a quarter
-shorter at the morning and evening peaks (for example 72 s against 95 s network-wide at
-9 am) and almost no difference off-peak (25 s against 25 s at 3 am), because a timer tuned
+There are two ways the app measures adaptive against fixed, and they are not the same
+number. Keep them apart in a report.
+
+**The delay formula** (the dashboard header, the forecast and the trip planner). It asks, for
+steady traffic at one hour, what each plan's average wait would be.
+
+**The replay** (the replay panel, and the figure the demo tour quotes). It runs the controller
+that is actually on the map, in half-hour steps of 2 seconds, beside the junction's fixed timer
+on identical arrivals, and counts the queues.
+
+The replay is the stricter test, because it includes everything the formula ignores: queues
+carried over, the 4 s lost at every change of green, the pre-emption rules. Writing it exposed a
+real fault: with the controller's earlier rules (pre-empt after 8 s on a margin of 0.25) it
+changed phase so often that it lost more time than it saved, and in the replay it did **worse**
+than the fixed timer at the peaks (wait 10 to 13 % longer on average, worse at about 52 of 69
+junctions) while the formula still claimed a gain. Holding each green for a share of its
+allocation and widening the margin fixed it. With the rules above, over the 69 junctions
+on a Monday:
+
+| Moment         | Formula: wait cut | Replay: wait cut | Junctions worse in the replay |
+| -------------- | ----------------- | ---------------- | ----------------------------- |
+| 3 am           | 0 %               | about 23 %       | 0                             |
+| 9 am (peak)    | 26 %              | about 41 %       | 4                             |
+| 1 pm           | 1 %               | about 14 %       | 6                             |
+| 6:30 pm (peak) | 29 %              | about 43 %       | 0                             |
+
+The replay shows larger gains overnight than the formula, probably because a timer tuned to the week's
+average keeps long cycles when almost nothing is waiting, and the formula (steady state)
+does not charge for that as heavily. Both are measured on simulated demand. Neither is a
+measurement of a real road, and the table above is one set of settings found by trying
+combinations against the replay, so it flatters the controller a little: treat the direction as
+the finding, not the exact percentages. The earlier, formula-only summary follows.
+
+Against a timer set for the week's average traffic, the delay formula predicts a wait about a
+quarter shorter at the morning and evening peaks (for example 75 s against 101 s network-wide
+at 9 am) and almost no difference off-peak (25 s against 25 s at 3 am), because a timer tuned
 to the average is already close to right when demand is average. At the peaks many
 approaches are over capacity, and no timing plan can fix a road that is simply full.
 
@@ -126,11 +174,18 @@ src/
   lib/traffic-model.ts      Webster plan, HCM delay, junction solver
   lib/fixed-plan.ts         the fixed timer each junction is compared with
   lib/sim-core.ts           demand curve, queue step, phase controller (browser and server)
-  lib/forecast.ts           steady-state forecast of every junction for any hour
+  lib/forecast.ts           steady-state forecast of every junction for any hour, and the busiest moments
+  lib/replay.ts             half an hour at one junction, fixed timer against adaptive
+  lib/signal-aspect.ts      green, amber or red for each head, from the 4 s lost time
+  lib/share.ts, export.ts   links to a view, CSV of the network
+  lib/map-nav.ts            keyboard movement between junctions
   lib/routing.ts            OSRM client, junctions along a route, delay on a trip
   lib/demo-engine.ts        the in-browser world used in demo mode
   lib/traffic-data.ts       data access, demo or Supabase
   lib/traffic.functions.ts  server functions for live mode
+  lib/control-auth.ts       the secret check for the scheduled control endpoint
+  routes/api/control.ts     POST /api/control, called by a scheduler to run the loop
+  lib/testing/              an in-process Supabase stand-in used by the live-mode tests
   integrations/supabase/    Supabase clients and generated types
 supabase/
   migrations/               schema, seed data (69 junctions, 276 approaches), control functions
@@ -148,11 +203,17 @@ pauses when the canvas is off screen.
 
 ### Limits worth knowing
 
-- A route is charged for the 69 modelled junctions within 200 m of its line, at the
-  junction-wide average wait, not for the particular arm it uses. Flyovers and parallel
-  roads can be matched when they should not be. OSRM's own drive time already includes a
-  small allowance per signal, so a little is counted twice.
-- Forecasts assume the same demand every day: there is no weekday/weekend difference.
+- A route is charged for the 69 modelled junctions within 200 m of its line. Flyovers and
+  parallel roads can be matched when they should not be. OSRM's own drive time already
+  includes a small allowance per signal, so a little is counted twice.
+- Saturdays and Sundays have their own demand shape (no commuter peaks, a lunch plateau and
+  an evening outing peak). It is a plausible shape, like the weekday one, not a measurement. The
+  fixed timer is tuned to the whole week's average, as a real one would be.
+- A route is priced on the arm of each junction it arrives on, worked out from its heading
+  over the last 120 m. Turning movements are not modelled, so a vehicle that turns is charged
+  the wait of the arm it came from.
+- Rain cuts every approach's saturation flow by 20 % and changes nothing else, and the fixed
+  timer does not know it is raining.
 - The public OSRM server and OpenStreetMap tiles are free services for light use.
 
 ## Setting up your own Supabase project (live mode)
@@ -171,6 +232,25 @@ Demo mode needs none of this.
 If the backend cannot be reached, or the junction table is empty, the dashboard says so
 instead of showing invented numbers.
 
+### Keeping the loop running without a browser
+
+By default an open page drives the loop (a tick every 12 s, a phase update every 2 s). That
+only works while someone has the page open. To run it without one:
+
+1. Choose a secret of 16 or more characters and put it in `.env.local` as
+   `CONTROL_CRON_SECRET`.
+2. Start something that calls `POST /api/control` with `Authorization: Bearer <secret>`:
+   - the bundled worker: `CONTROL_URL=http://localhost:3000 npm run control` (on your own
+     machine or any always-on host), or
+   - Supabase's own scheduler: edit and run `supabase/scheduling.sql` once the app is deployed
+     at a public address.
+3. Set `CONTROL_BROWSER_DRIVEN=false` and `VITE_BROWSER_DRIVES_LOOP=false`. Open tabs then stop
+   calling the control endpoints, and the browser endpoints refuse to do anything, so only a
+   caller holding the secret can move the simulation.
+
+`GET` and a wrong or missing secret get 401, an unset secret gets 500 (it never falls open),
+and the database still throttles the work whoever calls.
+
 ### How the live control loop is protected
 
 The two server functions that move the world forward can be called by anyone who can reach
@@ -181,6 +261,14 @@ through set-based SQL functions, the database allows only one green per junction
 `prune_old_rows` function owns data retention. The data is simulated, so the worst an
 outsider can do is keep the simulation ticking. For anything real, move the loops to a
 scheduled job and require a secret.
+
+The live-mode server functions are tested for real: `src/lib/live-loop.test.ts` and
+`src/lib/live-reads.test.ts` run the actual tick and phase-update code, and every dashboard
+read, against the migrations on an in-process Postgres, through a small stand-in for the
+Supabase client (`src/lib/testing`). They check one green per junction through many rounds,
+the throttle, the trigger, blocked lanes, retention and the shape of every read. What they
+cannot check is Supabase itself (PostgREST, row-level security, the real network), so the first
+run against a real project may still turn up something.
 
 `supabase/tests/verify-migrations.mjs` (`npm run test:db`) applies the migrations to an
 in-process Postgres and checks the constraints, the throttle, the handover function, the

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   FORCED_HANDOVER_SEC,
   INCIDENT_CAPACITY_FACTOR,
+  MAX_HOLD_SEC,
   MAX_PHASE_SEC,
   MAX_RED_SEC,
   MEAN_DAY_FACTOR,
@@ -12,6 +13,7 @@ import {
   decidePhase,
   effectiveGreenSeconds,
   incidentRoadId,
+  istClock,
   levelFor,
   loadFor,
   stepQueue,
@@ -190,13 +192,53 @@ describe("decidePhase", () => {
 
   it("pre-empts early only when another approach is clearly worse off", () => {
     const base = [
-      row(1, { isGreen: true, startedAtMs: NOW - 12_000, pressure: 0.5 }),
+      row(1, { isGreen: true, startedAtMs: NOW - 20_000, pressure: 0.5 }),
       row(2, { pressure: 0.5 + PREEMPT_MARGIN - 0.01 }),
     ];
     expect(decidePhase(base, NOW)).toBeNull();
 
     const worse = [base[0] as PhaseApproach, row(2, { pressure: 0.5 + PREEMPT_MARGIN + 0.05 })];
     expect(decidePhase(worse, NOW)?.startRoadId).toBe(2);
+  });
+
+  it("does not pre-empt before the green has held a share of its allocation", () => {
+    // 30 s allocated, so the hold is 18 s: at 12 s even a much worse-off approach must wait.
+    const early = [
+      row(1, { isGreen: true, startedAtMs: NOW - 12_000, pressure: 0.2 }),
+      row(2, { pressure: 3 }),
+    ];
+    expect(decidePhase(early, NOW)).toBeNull();
+    const later = [
+      row(1, { isGreen: true, startedAtMs: NOW - 19_000, pressure: 0.2 }),
+      row(2, { pressure: 3 }),
+    ];
+    expect(decidePhase(later, NOW)?.startRoadId).toBe(2);
+  });
+
+  it("holds a short allocation only for the minimum phase time", () => {
+    // 10 s allocated: 60 % of it is below the 8 s floor, so the floor applies.
+    const rows = (elapsedMs: number) => [
+      row(1, { isGreen: true, startedAtMs: NOW - elapsedMs, pressure: 0.2, allocatedGreen: 10 }),
+      row(2, { pressure: 3 }),
+    ];
+    expect(decidePhase(rows(7_000), NOW)).toBeNull();
+    expect(decidePhase(rows(8_500), NOW)?.startRoadId).toBe(2);
+  });
+
+  it("never holds a long allocation past the cap before pre-empting", () => {
+    const decision = decidePhase(
+      [
+        row(1, {
+          isGreen: true,
+          startedAtMs: NOW - (MAX_HOLD_SEC + 1) * 1000,
+          pressure: 0.2,
+          allocatedGreen: 90,
+        }),
+        row(2, { pressure: 3 }),
+      ],
+      NOW,
+    );
+    expect(decision?.startRoadId).toBe(2);
   });
 
   it("never pre-empts before the minimum phase time", () => {
@@ -288,5 +330,34 @@ describe("approachPressure", () => {
   it("is zero without a model and adds queue weight otherwise", () => {
     expect(approachPressure(null)).toBe(0);
     expect(approachPressure({ degreeSaturation: 0.8, queueNow: 20 })).toBeCloseTo(1.2);
+  });
+});
+
+describe("weekend demand", () => {
+  // 2026-10-03 is a Saturday, 2026-10-05 a Monday; both at the given Chennai hour.
+  const at = (day: number, hour: number) =>
+    new Date(Date.UTC(2026, 9, day) + (hour - 5.5) * 3600_000);
+
+  it("has no commuter peak on a Saturday", () => {
+    expect(timeOfDayFactor(at(5, 9))).toBeGreaterThan(1.7);
+    expect(timeOfDayFactor(at(3, 9))).toBeLessThan(1.1);
+  });
+
+  it("peaks at the evening outing and stays below the working-day rush", () => {
+    expect(timeOfDayFactor(at(3, 19))).toBeGreaterThan(1.4);
+    expect(timeOfDayFactor(at(3, 19))).toBeLessThan(timeOfDayFactor(at(5, 18.5)));
+  });
+
+  it("is continuous across midnight into Sunday and into Monday", () => {
+    const eps = 1 / 60;
+    expect(Math.abs(timeOfDayFactor(at(3, 23.99)) - timeOfDayFactor(at(4, 0)))).toBeLessThan(eps);
+    expect(Math.abs(timeOfDayFactor(at(4, 23.99)) - timeOfDayFactor(at(5, 0)))).toBeLessThan(eps);
+  });
+
+  it("reads the Chennai calendar day, not the UTC one", () => {
+    // 20:00 UTC on Friday is 01:30 on Saturday in Chennai.
+    const clock = istClock(new Date(Date.UTC(2026, 9, 2, 20, 0)));
+    expect(clock.weekend).toBe(true);
+    expect(clock.hour).toBeCloseTo(1.5, 5);
   });
 });

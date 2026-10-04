@@ -13,9 +13,20 @@ Done
 - [x] Every migration verified on an in-process Postgres (`npm run test:db`)
 - [x] Guided demo tour and a map that opens on the city, with glowing, pulsing jam markers
 - [x] Coursework SQL for the DBMS rubric, run and saved by `npm run rubric`
+- [x] Replay of fixed timer against adaptive, which exposed and fixed a controller that was
+      losing to the timer at the peaks
+- [x] Amber and all-red shown at every handover, weekend demand, heavy-rain scenario,
+      route pricing per arm
+- [x] Keyboard: command palette and Shift+arrow movement between junctions; shareable
+      links; CSV export
+- [x] Live-mode server functions run against the real schema in tests; authenticated,
+      schedulable control endpoint and worker
+- [x] Component tests
 
 Next
 
 - [ ] Calibrate the demand curve on a counted traffic dataset (placeholder curve today)
 - [ ] Live speed from a traffic API for the GST Corridor junctions
-- [ ] Run live mode against a real Supabase project end to end
+- [ ] Run live mode against a real Supabase project end to end (needs a project and keys)
+- [ ] Turning movements and per-lane delay in route pricing
+- [ ] Row-level security and per-user roles if the app ever holds real data

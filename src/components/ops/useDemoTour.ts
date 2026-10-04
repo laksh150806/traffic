@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { formatIstTime, istHourOf, minutesUntilIst } from "@/lib/forecast";
+import { findPeaks, formatIstTime, istHourOf, peakLabel } from "@/lib/forecast";
 
 export type TourSnapshot = {
   jammed: number;
+  busy: number;
   total: number;
   worst: { id: number; name: string; zone: string } | null;
 };
@@ -15,6 +16,11 @@ export type TourControls = {
   setTime: (ms: number | null) => void;
   snapshot: (ms: number) => TourSnapshot;
   select: (junctionId: number) => void;
+  /** Replay half an hour at a junction from this moment, fixed timer against adaptive. */
+  replay: (
+    junctionId: number,
+    ms: number,
+  ) => { waitFixed: number; waitAdaptive: number; percent: number } | null;
   showTrip: (fromId: number, toId: number) => void;
   clearTrip: () => void;
 };
@@ -73,8 +79,9 @@ export function useDemoTour(controls: TourControls) {
     const c = () => live.current;
     const { base, reducedMotion } = c();
 
-    const morning = minutesUntilIst(base, 9);
-    const evening = minutesUntilIst(base, 18.5);
+    // The stops are the busiest moments of the next 24 hours, so a weekend tour visits the lunch and
+    // evening-outing peaks and a Sunday night one runs into Monday's rush.
+    const { morning, evening } = findPeaks(base);
     const step = reducedMotion ? 30 : 5;
     // A little under a day, so the last stop is still inside the time bar's 24 hours after the
     // clock has moved on a few minutes.
@@ -96,10 +103,7 @@ export function useDemoTour(controls: TourControls) {
     await wait(3600);
     if (!alive()) return;
 
-    const peaks = new Map<number, string>([
-      [morning, "Morning rush"],
-      [evening, "Evening rush"],
-    ]);
+    const peaks = new Set<number>([morning, evening]);
     for (let offset = step; offset <= total; offset += step) {
       if (!alive()) return;
       const when = at(offset);
@@ -117,14 +121,26 @@ export function useDemoTour(controls: TourControls) {
         jammed: snap.jammed,
         progress: progressAt(offset),
       });
-      const peakName = peaks.get(offset);
-      if (peakName && snap.worst) {
+      if (peaks.has(offset) && snap.worst) {
         c().select(snap.worst.id);
+        const replay = c().replay(snap.worst.id, when.getTime());
+        // Say what the replay found, whichever way it went: it does not win at every junction.
+        const replayLine =
+          replay && replay.waitFixed > 0
+            ? replay.percent >= 3
+              ? ` Replaying the next half hour here, a vehicle waits ${replay.waitAdaptive} s with the adaptive controller against ${replay.waitFixed} s on a fixed timer.`
+              : replay.percent > -3
+                ? ` Replaying the next half hour here, the adaptive controller and a fixed timer wait about the same, ${replay.waitAdaptive} s and ${replay.waitFixed} s.`
+                : ` Replaying the next half hour here, a fixed timer does a little better (${replay.waitFixed} s against ${replay.waitAdaptive} s): the adaptive controller does not win at every junction.`
+            : "";
         setCaption({
           time: formatIstTime(when),
-          phase: peakName,
+          phase: peakLabel(hour),
           title: `${snap.worst.name} is the worst of the ${snap.total}`,
-          body: `${snap.jammed} junctions are jammed. It is in the ${snap.worst.zone} zone. No timing plan can empty a road that is simply full.`,
+          body:
+            snap.jammed > 0
+              ? `${snap.jammed} junctions are jammed. It is in the ${snap.worst.zone} zone.${replayLine}`
+              : `Nothing is jammed even now, but ${snap.busy} junctions are busy. This one is in the ${snap.worst.zone} zone.${replayLine}`,
           jammed: snap.jammed,
           progress: progressAt(offset),
         });
@@ -142,7 +158,7 @@ export function useDemoTour(controls: TourControls) {
     setCaption({
       time: formatIstTime(at(evening)),
       phase: "Trip planner",
-      title: "Leaving at the evening peak",
+      title: `Leaving at ${formatIstTime(at(evening))}, the evening peak`,
       body: "The route is priced junction by junction at the time the vehicle should reach each one, and compared with fixed timers.",
       jammed: c().snapshot(at(evening).getTime()).jammed,
       progress: 0.86,

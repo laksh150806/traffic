@@ -43,6 +43,8 @@ Mobile stacks: map first (520px tall), then Explore or Directions, then the plac
 - One orchestrated moment: the map flies to the selected junction (~0.8s).
 - The demo tour is the showpiece: a day of traffic sweeps across the map (about 40 seconds),
   jammed junctions glow and send rings outward, and a caption card narrates each stop.
+- Signal heads go amber, then all red, at every handover: the 4 s the model charges as lost time.
+- Jammed junctions send red rings outward; busy ones carry a soft glow.
 - Nothing else moves unprompted; the signal heads in the junction view pulse while green.
 - Approach cards tilt a few degrees toward the pointer.
 - Numbers ease to new values. Everything respects `prefers-reduced-motion`.

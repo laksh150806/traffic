@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { Play, RefreshCw } from "lucide-react";
+import { Download, Link2, Play, RefreshCw } from "lucide-react";
 import type { DataMode } from "@/lib/data-mode";
 
 function timeAgo(iso: string | null) {
@@ -45,6 +45,9 @@ export function DashboardHeader({
   mode,
   onPlayDemo,
   demoPlaying = false,
+  onShare,
+  shareLabel = "Share view",
+  onExport,
 }: {
   lastUpdated: string | null;
   onRecalculate: () => void;
@@ -52,6 +55,9 @@ export function DashboardHeader({
   mode: DataMode;
   onPlayDemo?: () => void;
   demoPlaying?: boolean;
+  onShare?: () => void;
+  shareLabel?: string;
+  onExport?: () => void;
 }) {
   const demo = mode === "demo";
   // Re-render now and then so "Updated 12s ago" keeps counting between data refreshes.
@@ -88,6 +94,28 @@ export function DashboardHeader({
           <p className="meta-label leading-tight">Updated</p>
           <p className="numeric text-xs text-foreground">{timeAgo(lastUpdated)}</p>
         </div>
+        {onShare ? (
+          <button
+            type="button"
+            onClick={onShare}
+            title="Copy a link to this exact view: junction, time and trip"
+            className="glass-chip hidden items-center gap-1.5 px-3.5 py-2 text-xs text-muted-foreground transition-data hover:text-foreground md:inline-flex"
+          >
+            <Link2 className="h-3.5 w-3.5" aria-hidden />
+            <span aria-live="polite">{shareLabel}</span>
+          </button>
+        ) : null}
+        {onExport ? (
+          <button
+            type="button"
+            onClick={onExport}
+            title="Download the whole network at the time on the map as a CSV file"
+            className="glass-chip hidden items-center gap-1.5 px-3.5 py-2 text-xs text-muted-foreground transition-data hover:text-foreground md:inline-flex"
+          >
+            <Download className="h-3.5 w-3.5" aria-hidden />
+            Export CSV
+          </button>
+        ) : null}
         {onPlayDemo ? (
           <button
             type="button"

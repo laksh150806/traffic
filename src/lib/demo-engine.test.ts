@@ -12,12 +12,13 @@ import {
   demoFetchTotalSecondsSaved,
   demoTick,
   getActiveIncidents,
+  getScenarioCapacity,
   getScenarioMode,
   resetDemoEngine,
   setScenarioMode,
   triggerIncident,
 } from "@/lib/demo-engine";
-import { MAX_RED_SEC } from "@/lib/sim-core";
+import { MAX_RED_SEC, RAIN_CAPACITY_FACTOR } from "@/lib/sim-core";
 import { SEED_JUNCTIONS } from "@/lib/seed-junctions";
 
 let clock = Date.now() + 60_000;
@@ -96,6 +97,22 @@ describe("demo engine", () => {
     expect(perf.saturatedApproaches).toBe(0);
     expect(perf.networkDelayAdaptive).toBeLessThan(perf.networkDelayFixed);
     setScenarioMode("auto");
+  });
+
+  it("rain cuts every approach's saturation flow by a fifth and nothing else", () => {
+    const first = SEED_JUNCTIONS[0]!.id;
+    const flow = () => demoFetchJunctionModel(first).map((a) => a.saturation_flow_vph);
+    setScenarioMode("auto");
+    runFor(2);
+    const dry = flow();
+    setScenarioMode("rain");
+    expect(getScenarioCapacity()).toBe(RAIN_CAPACITY_FACTOR);
+    runFor(2);
+    const wet = flow();
+    setScenarioMode("auto");
+    expect(getScenarioCapacity()).toBe(1);
+    expect(wet).toHaveLength(4);
+    wet.forEach((value, i) => expect(value / dry[i]!).toBeCloseTo(RAIN_CAPACITY_FACTOR, 2));
   });
 
   it("reports how many junctions the adaptive plan is predicted to do worse at", () => {
