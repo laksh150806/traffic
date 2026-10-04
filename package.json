@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "test:db": "node supabase/tests/verify-migrations.mjs",
     "rubric": "node supabase/rubric/run-rubric.mjs",
+    "control": "node scripts/control-loop.mjs",
     "build:setup": "node scripts/build-setup-sql.mjs"
   },
   "overrides": {
@@ -46,6 +47,8 @@
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
     "@eslint/js": "^9.32.0",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
     "@types/node": "^22.16.5",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
@@ -57,6 +60,7 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^15.15.0",
+    "jsdom": "^29.1.1",
     "nitro": "3.0.260603-beta",
     "prettier": "^3.7.3",
     "typescript": "^5.8.3",
