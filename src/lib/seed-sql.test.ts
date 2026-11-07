@@ -94,7 +94,10 @@ describe("seed junctions against the SQL migrations", () => {
 });
 
 describe("integrity migration", () => {
-  const latest = migrations[migrations.length - 1] ?? "";
+  const latest = readFileSync(
+    join(dir, "20261003120000_integrity_control_and_incidents.sql"),
+    "utf8",
+  );
 
   it("enforces one green per junction in the database", () => {
     expect(latest).toMatch(

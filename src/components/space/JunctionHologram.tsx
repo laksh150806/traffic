@@ -12,7 +12,10 @@ import { GlCanvas } from "@/components/space/GlCanvas";
 const GREEN = "#4ade80";
 const RED = "#fb4d6a";
 const AMBER = "#fbbf24";
-const CAR = "#67e8f9";
+const CAR = "#eceef2";
+const HELD = "#5c5f66";
+const LINE = "#d8dae0";
+const STARK = "#e5484d";
 
 const ARM: Record<string, { dir: [number, number]; label: string }> = {
   NORTH: { dir: [0, -1], label: "N" },
@@ -29,8 +32,16 @@ const FIRST_ROW = 0.82;
 /** Built once and shared by every approach; per-car geometry is what makes scenes heavy. */
 function buildAssets() {
   const glow = makeGlowTexture();
-  const car = (emissiveIntensity: number) =>
-    new THREE.MeshLambertMaterial({ color: CAR, emissive: CAR, emissiveIntensity });
+  const car = (color: string, emissiveIntensity: number) =>
+    new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity });
+  const wire = (color: string, opacity: number) =>
+    new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity,
+      depthWrite: false,
+      toneMapped: false,
+    });
   const flat = (color: string) => new THREE.MeshBasicMaterial({ color, toneMapped: false });
   const halo = (color: string, opacity: number) =>
     new THREE.SpriteMaterial({
@@ -47,15 +58,22 @@ function buildAssets() {
     box: new THREE.BoxGeometry(1, 1, 1),
     post: new THREE.CylinderGeometry(0.012, 0.012, 0.44, 8),
     head: new THREE.SphereGeometry(0.07, 16, 16),
-    carGreen: car(0.7),
-    carRed: car(0.35),
+    carGreen: car(CAR, 0.85),
+    carRed: car(HELD, 0.12),
+    edge: wire(LINE, 0.55),
+    dash: wire(LINE, 0.28),
+    ring: wire(LINE, 0.16),
+    ringBright: wire(LINE, 0.34),
+    stark: wire(STARK, 0.9),
+    scan: wire(LINE, 0.22),
+    plate: new THREE.MeshLambertMaterial({ color: "#101114", transparent: true, opacity: 0.75 }),
     lineGreen: flat(GREEN),
     lineRed: flat(RED),
     lineAmber: flat(AMBER),
     headGreen: flat(GREEN),
     headRed: flat(RED),
     headAmber: flat(AMBER),
-    postMat: new THREE.MeshLambertMaterial({ color: "#2a2d57" }),
+    postMat: new THREE.MeshLambertMaterial({ color: "#3a3c42" }),
     haloGreen: halo(GREEN, 0.9),
     haloRed: halo(RED, 0.55),
     haloAmber: halo(AMBER, 0.8),
@@ -172,6 +190,21 @@ function Scene({ roads, reducedMotion }: { roads: RoadState[]; reducedMotion: bo
   const assets = useMemo(buildAssets, []);
   useEffect(() => () => disposeAssets(assets), [assets]);
   const now = useSecondClock();
+  const bearing = useRef<THREE.Group>(null);
+  const scan = useRef<THREE.Mesh>(null);
+  useFrame(({ clock }) => {
+    if (reducedMotion) return;
+    const t = clock.elapsedTime;
+    if (bearing.current) bearing.current.rotation.y = -t * 0.15;
+    if (scan.current) {
+      // A ring that spreads from the stop lines to the edge of the table and fades, every 4 s.
+      const p = (t % 4) / 4;
+      const r = 1 + p * 2.1;
+      scan.current.scale.set(r, r, 1);
+      scan.current.position.y = 0.03;
+      (scan.current.material as THREE.MeshBasicMaterial).opacity = 0.3 * (1 - p);
+    }
+  });
   const aspects = useMemo(
     () =>
       junctionAspects(
@@ -187,26 +220,82 @@ function Scene({ roads, reducedMotion }: { roads: RoadState[]; reducedMotion: bo
 
   return (
     <>
-      <ambientLight intensity={0.8} color="#8c8cff" />
-      <directionalLight position={[3, 5, 2]} intensity={1.6} color="#dfeeff" />
+      <ambientLight intensity={0.7} color="#ffffff" />
+      <directionalLight position={[3, 5, 2]} intensity={1.4} color="#ffffff" />
 
-      {/* ground disc and grid */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]}>
-        <circleGeometry args={[3.3, 56]} />
-        <meshBasicMaterial color="#0c1038" transparent opacity={0.85} />
+      {/* projection rings: the table the junction is projected onto */}
+      {[1.25, 2.25, 3.2].map((r, i) => (
+        <mesh
+          key={r}
+          rotation={[-Math.PI / 2, 0, 0]}
+          material={i === 2 ? assets.ringBright : assets.ring}
+        >
+          <ringGeometry args={[r - 0.008, r + 0.008, 128]} />
+        </mesh>
+      ))}
+      <group ref={bearing}>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.002, 0]} material={assets.stark}>
+          <ringGeometry args={[3.26, 3.32, 48, 1, 0, Math.PI / 7]} />
+        </mesh>
+        {Array.from({ length: 48 }, (_, i) => {
+          const angle = (i / 48) * Math.PI * 2;
+          const long = i % 12 === 0;
+          return (
+            <mesh
+              key={i}
+              geometry={assets.box}
+              material={long ? assets.ringBright : assets.ring}
+              rotation={[0, -angle, 0]}
+              position={[Math.cos(angle) * 3.42, 0.002, Math.sin(angle) * 3.42]}
+              scale={[long ? 0.22 : 0.1, 0.004, 0.012]}
+            />
+          );
+        })}
+      </group>
+      <mesh ref={scan} rotation={[-Math.PI / 2, 0, 0]} material={assets.scan}>
+        <ringGeometry args={[1.1, 1.13, 96]} />
       </mesh>
-      <gridHelper args={[6.6, 22, "#4a5bd6", "#222a73"]} position={[0, 0.001, 0]} />
 
-      {/* crossing roads */}
-      <mesh geometry={assets.box} scale={[6.2, 0.02, 1.05]} position={[0, 0.012, 0]}>
-        <meshLambertMaterial color="#181c4c" />
-      </mesh>
-      <mesh geometry={assets.box} scale={[1.05, 0.02, 6.2]} position={[0, 0.012, 0]}>
-        <meshLambertMaterial color="#181c4c" />
-      </mesh>
-      <mesh geometry={assets.box} scale={[1.05, 0.006, 1.05]} position={[0, 0.024, 0]}>
-        <meshLambertMaterial color="#232a6e" emissive="#3b4ae0" emissiveIntensity={0.25} />
-      </mesh>
+      {/* crossing roads: smoked glass with lit kerbs and a dashed centre line */}
+      <mesh
+        geometry={assets.box}
+        material={assets.plate}
+        scale={[6.2, 0.02, 1.05]}
+        position={[0, 0.012, 0]}
+      />
+      <mesh
+        geometry={assets.box}
+        material={assets.plate}
+        scale={[1.05, 0.02, 6.2]}
+        position={[0, 0.012, 0]}
+      />
+      {[0, Math.PI / 2].map((turn) => (
+        <group key={turn} rotation={[0, turn, 0]}>
+          {[-1, 1].flatMap((side) =>
+            [-1, 1].map((half) => (
+              <mesh
+                key={`${side}${half}`}
+                geometry={assets.box}
+                material={assets.edge}
+                scale={[2.575, 0.004, 0.014]}
+                position={[half * 1.8125, 0.026, side * 0.525]}
+              />
+            )),
+          )}
+          {Array.from({ length: 10 }, (_, i) => {
+            const x = (i < 5 ? -1 : 1) * (0.78 + (i % 5) * 0.5);
+            return (
+              <mesh
+                key={i}
+                geometry={assets.box}
+                material={assets.dash}
+                scale={[0.22, 0.004, 0.012]}
+                position={[x, 0.026, 0]}
+              />
+            );
+          })}
+        </group>
+      ))}
 
       {roads.map((road) => (
         <Approach

@@ -9,27 +9,29 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 
+import { AppShell } from "../components/shell/AppShell";
+import { EngineProvider } from "../components/shell/engine";
+import { FuzzyText, GlitchText } from "../components/fx/text";
+import { RetroGrid } from "../components/fx/decor";
+
 import appCss from "../styles.css?url";
 import { reportApplicationError } from "../lib/error-reporting";
 
 function NotFoundComponent() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="max-w-md text-center">
-        <h1 className="text-7xl font-bold text-foreground">404</h1>
-        <h2 className="mt-4 text-xl font-semibold text-foreground">Page not found</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          The page you're looking for doesn't exist or has been moved.
-        </p>
-        <div className="mt-6">
-          <Link
-            to="/"
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-          >
-            Go home
-          </Link>
-        </div>
+    <div className="ops-page relative flex min-h-[70vh] flex-col items-center justify-center overflow-hidden text-center">
+      <RetroGrid />
+      <p className="ops-kicker relative">Route not on the grid</p>
+      <div className="relative my-4 flex justify-center">
+        <FuzzyText text="404" size={150} />
       </div>
+      <p className="ops-sub relative mx-auto">
+        No junction, panel or page answers at this address. The signal network is fine; only the
+        link is broken.
+      </p>
+      <Link to="/" className="ops-btn solid relative mt-6">
+        Back to the control room
+      </Link>
     </div>
   );
 }
@@ -42,31 +44,29 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   }, [error]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="max-w-md text-center">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          This page didn't load
-        </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Something went wrong on our end. You can try refreshing or head back home.
-        </p>
-        <div className="mt-6 flex flex-wrap justify-center gap-2">
-          <button
-            onClick={() => {
-              router.invalidate();
-              reset();
-            }}
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-          >
-            Try again
-          </button>
-          <a
-            href="/"
-            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
-          >
-            Go home
-          </a>
-        </div>
+    <div className="ops-page flex min-h-screen flex-col items-center justify-center text-center">
+      <p className="ops-kicker">Fault</p>
+      <h1 className="ops-h1 mt-2">
+        <GlitchText text="Panel failed to load" />
+      </h1>
+      <p className="ops-sub mt-3">
+        Something broke while drawing this page. The signal loop keeps running; try the page again.
+      </p>
+      <p className="ops-term mt-4 max-w-xl text-left">{error.message}</p>
+      <div className="mt-6 flex flex-wrap justify-center gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            router.invalidate();
+            reset();
+          }}
+          className="ops-btn solid"
+        >
+          Try again
+        </button>
+        <a href="/" className="ops-btn">
+          Control room
+        </a>
       </div>
     </div>
   );
@@ -77,14 +77,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
-      { name: "theme-color", content: "#0b0a1f" },
-      { title: "Smart Traffic Management — Adaptive Signal Control" },
+      { name: "theme-color", content: "#0a0b0c" },
+      { title: "SIGNAL OPS · Chennai adaptive signal control" },
       {
         name: "description",
         content:
           "Adaptive traffic signal control for 69 Chennai junctions: a queue model sets the green times, with a forecast and trip planner. Traffic is simulated.",
       },
-      { property: "og:title", content: "Smart Traffic Management" },
+      { property: "og:title", content: "SIGNAL OPS · Chennai adaptive signal control" },
       {
         property: "og:description",
         content: "Adaptive signal control dashboard for city traffic operations.",
@@ -101,7 +101,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap",
       },
       { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
     ],
@@ -119,7 +119,7 @@ function RootShell({ children }: { children: ReactNode }) {
       <head>
         <HeadContent />
       </head>
-      <body>
+      <body className="ops-body">
         {children}
         <Scripts />
       </body>
@@ -132,8 +132,12 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
+      <EngineProvider>
+        <AppShell>
+          {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+          <Outlet />
+        </AppShell>
+      </EngineProvider>
     </QueryClientProvider>
   );
 }

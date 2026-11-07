@@ -10,14 +10,28 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as IncidentsRouteImport } from './routes/incidents'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as ApiControlRouteImport } from './routes/api/control'
 import { Route as ApiLiveTrafficRouteImport } from './routes/api/live-traffic'
 import { Route as ApiRouteEtaRouteImport } from './routes/api/route-eta'
+import { Route as JunctionsIndexRouteImport } from './routes/junctions.index'
+import { Route as JunctionsIdRouteImport } from './routes/junctions.$id'
 import { Route as ApiTrafficTileZXYRouteImport } from './routes/api/traffic-tile.$z.$x.$y'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IncidentsRoute = IncidentsRouteImport.update({
+  id: '/incidents',
+  path: '/incidents',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiControlRoute = ApiControlRouteImport.update({
@@ -35,6 +49,16 @@ const ApiRouteEtaRoute = ApiRouteEtaRouteImport.update({
   path: '/api/route-eta',
   getParentRoute: () => rootRouteImport,
 } as any)
+const JunctionsIndexRoute = JunctionsIndexRouteImport.update({
+  id: '/junctions/',
+  path: '/junctions/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const JunctionsIdRoute = JunctionsIdRouteImport.update({
+  id: '/junctions/$id',
+  path: '/junctions/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiTrafficTileZXYRoute = ApiTrafficTileZXYRouteImport.update({
   id: '/api/traffic-tile/$z/$x/$y',
   path: '/api/traffic-tile/$z/$x/$y',
@@ -43,55 +67,83 @@ const ApiTrafficTileZXYRoute = ApiTrafficTileZXYRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/incidents': typeof IncidentsRoute
+  '/login': typeof LoginRoute
   '/api/control': typeof ApiControlRoute
   '/api/live-traffic': typeof ApiLiveTrafficRoute
   '/api/route-eta': typeof ApiRouteEtaRoute
+  '/junctions/$id': typeof JunctionsIdRoute
+  '/junctions/': typeof JunctionsIndexRoute
   '/api/traffic-tile/$z/$x/$y': typeof ApiTrafficTileZXYRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/incidents': typeof IncidentsRoute
+  '/login': typeof LoginRoute
   '/api/control': typeof ApiControlRoute
   '/api/live-traffic': typeof ApiLiveTrafficRoute
   '/api/route-eta': typeof ApiRouteEtaRoute
+  '/junctions/$id': typeof JunctionsIdRoute
+  '/junctions': typeof JunctionsIndexRoute
   '/api/traffic-tile/$z/$x/$y': typeof ApiTrafficTileZXYRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/incidents': typeof IncidentsRoute
+  '/login': typeof LoginRoute
   '/api/control': typeof ApiControlRoute
   '/api/live-traffic': typeof ApiLiveTrafficRoute
   '/api/route-eta': typeof ApiRouteEtaRoute
+  '/junctions/$id': typeof JunctionsIdRoute
+  '/junctions/': typeof JunctionsIndexRoute
   '/api/traffic-tile/$z/$x/$y': typeof ApiTrafficTileZXYRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/incidents'
+    | '/login'
     | '/api/control'
     | '/api/live-traffic'
     | '/api/route-eta'
+    | '/junctions/$id'
+    | '/junctions/'
     | '/api/traffic-tile/$z/$x/$y'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/incidents'
+    | '/login'
     | '/api/control'
     | '/api/live-traffic'
     | '/api/route-eta'
+    | '/junctions/$id'
+    | '/junctions'
     | '/api/traffic-tile/$z/$x/$y'
   id:
     | '__root__'
     | '/'
+    | '/incidents'
+    | '/login'
     | '/api/control'
     | '/api/live-traffic'
     | '/api/route-eta'
+    | '/junctions/$id'
+    | '/junctions/'
     | '/api/traffic-tile/$z/$x/$y'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  IncidentsRoute: typeof IncidentsRoute
+  LoginRoute: typeof LoginRoute
   ApiControlRoute: typeof ApiControlRoute
   ApiLiveTrafficRoute: typeof ApiLiveTrafficRoute
   ApiRouteEtaRoute: typeof ApiRouteEtaRoute
+  JunctionsIdRoute: typeof JunctionsIdRoute
+  JunctionsIndexRoute: typeof JunctionsIndexRoute
   ApiTrafficTileZXYRoute: typeof ApiTrafficTileZXYRoute
 }
 
@@ -102,6 +154,20 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/incidents': {
+      id: '/incidents'
+      path: '/incidents'
+      fullPath: '/incidents'
+      preLoaderRoute: typeof IncidentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/control': {
@@ -125,6 +191,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiRouteEtaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/junctions/': {
+      id: '/junctions/'
+      path: '/junctions'
+      fullPath: '/junctions/'
+      preLoaderRoute: typeof JunctionsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/junctions/$id': {
+      id: '/junctions/$id'
+      path: '/junctions/$id'
+      fullPath: '/junctions/$id'
+      preLoaderRoute: typeof JunctionsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/traffic-tile/$z/$x/$y': {
       id: '/api/traffic-tile/$z/$x/$y'
       path: '/api/traffic-tile/$z/$x/$y'
@@ -137,9 +217,13 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  IncidentsRoute: IncidentsRoute,
+  LoginRoute: LoginRoute,
   ApiControlRoute: ApiControlRoute,
   ApiLiveTrafficRoute: ApiLiveTrafficRoute,
   ApiRouteEtaRoute: ApiRouteEtaRoute,
+  JunctionsIdRoute: JunctionsIdRoute,
+  JunctionsIndexRoute: JunctionsIndexRoute,
   ApiTrafficTileZXYRoute: ApiTrafficTileZXYRoute,
 }
 export const routeTree = rootRouteImport

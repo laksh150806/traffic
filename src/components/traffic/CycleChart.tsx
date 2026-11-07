@@ -87,7 +87,7 @@ export function CycleChart({
               />
               <Tooltip
                 contentStyle={{
-                  background: "oklch(0.22 0.06 280 / 0.6)",
+                  background: "oklch(0.18 0.004 260 / 0.88)",
                   backdropFilter: "blur(16px) saturate(1.6)",
                   border: "1px solid oklch(1 0 0 / 0.16)",
                   borderRadius: "8px",

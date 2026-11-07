@@ -1,23 +1,25 @@
-# Design: Aurora Glass
+# Design: ARGUS
 
-A control room for a city, built from frosted glass. The Chennai signal network is a real map:
-every junction is a dot coloured by congestion, and the operator works from glass panels floating
-over a deep indigo aurora. The map answers three questions: where is it bad, what will it be like
-later, and what does a trip cost once the signals are counted. Everything around it is quiet,
-translucent and disciplined. The one 3D piece is the junction view, which earns its place by showing
-queues and signal heads you cannot see on a map.
+Chennai signal intelligence. An armoured eye hangs over the live map and watches the city: its
+aperture closes as average load rises, its plates flare and turn red with the share of jammed
+junctions, it pulses on each fresh reading, and a tether runs from it to the lock-on reticle of
+the junction being watched. Monochrome black and titanium with one red; signal colours only for
+traffic status. Every effect carries a reading: split-flap boards flip when a value changes,
+leader bars light to the value, the control-loop stepper follows the real 2 s / 12 s loop, the
+day spiral plots the next 24 hours of forecast jams, the folder fans out the junction files, and
+the terminal line (`argus@junction ›`) opens the command palette. Cursor grid, swarm and glow
+borders are desktop-pointer only and off with reduced motion. The eye shader is adapted from the
+owner's Jarvis sun, made neutral and driven by traffic data instead of voice.
 
 ## Palette
 
-| Token                        | Value                          | Use                                                                    |
-| ---------------------------- | ------------------------------ | ---------------------------------------------------------------------- |
-| Void                         | `oklch(0.13 0.03 275)`         | page background, with a saturated aurora wash for the glass to refract |
-| Deep space                   | `oklch(0.17 0.04 272)`         | inset surfaces                                                         |
-| Glass                        | `oklch(0.22 0.045 275 / 0.55)` | panels, blurred 20px                                                   |
-| Aurora                       | `oklch(0.82 0.13 205)`         | primary accent, live data                                              |
-| Nebula                       | `oklch(0.68 0.19 295)`         | secondary accent, glow                                                 |
-| Starlight                    | `oklch(0.96 0.01 270)`         | text                                                                   |
-| Signal low / moderate / high | green / amber / red            | traffic status only, never decoration                                  |
+| Token                        | Value                         | Use                                   |
+| ---------------------------- | ----------------------------- | ------------------------------------- |
+| Black                        | `oklch(0.1 0.003 260)`        | page background, one faint red glow   |
+| Glass                        | `oklch(0.2 0.004 260 / 0.55)` | panels, blurred 20px                  |
+| Titanium                     | `oklch(0.95 0.004 260)`       | primary: selection, actions, readouts |
+| Hot red                      | `oklch(0.62 0.2 27)`          | live and urgent trim, text selection  |
+| Signal low / moderate / high | green / amber / red           | traffic status only, never decoration |
 
 Status colours carry meaning (free-flowing, busy, jammed). They are not used as accents.
 
@@ -45,8 +47,10 @@ Mobile stacks: map first (520px tall), then Explore or Directions, then the plac
   jammed junctions glow and send rings outward, and a caption card narrates each stop.
 - Signal heads go amber, then all red, at every handover: the 4 s the model charges as lost time.
 - Jammed junctions send red rings outward; busy ones carry a soft glow.
-- Control-room finish: corner brackets on the main panels, a slow radar sweep over the map, a
-  light that travels along the header, a gradient title and glowing readouts. All of it animates
+- Control-room finish: white corner brackets and red and white trim on the map frame, a prismatic
+  rim on every panel, scanlines, a projected floor grid, a light along the header, a silver title
+  gradient, text that decodes when the selected junction changes, tiles that lean toward the
+  pointer with a foil light, and a tab title that reports the jam count while hidden. All of it animates
   transform or opacity only, is switched off by reduced motion, and is toned down on phones.
 - Real roads are coloured by TomTom speed on request (the Road speeds button).
 - Nothing else moves unprompted; the signal heads in the junction view pulse while green.
@@ -63,3 +67,14 @@ Camera views and CCTV charts are drawn from the simulated queue and say "Simulat
 panel. The comparison with the fixed timer is shown as a signed number with the count of
 junctions where the adaptive plan is predicted to do worse; a gain is never clamped to zero.
 Reduced motion is honoured globally in CSS, and charts and the camera loop check the setting too.
+
+## Hero instruments
+
+Each one is a vector SVG tied to live or modelled data, with a text equivalent for screen readers.
+
+- **Signal compass** (`SignalCompass`, place card): four bands, one per approach. Width is the queue, colour is the signal head now, a dashed ghost is the queue the fixed timer would leave, the outer arc counts down the green. Forecast hours show queues only.
+- **Day dial** (`DayDial`, place card): the typical day as a ring, one spoke per hour, length is load. The red hand is the time on the map. Click a spoke to move the map to that hour.
+
+## Deck layout
+
+On wide screens the map is the whole table, edge to edge. The controls float over it as two smoked-glass columns, and the map frames itself inside the open middle (`--deck-l` / `--deck-r`). Interface language acts on the real map: a lock-on reticle with a projected name tag marks the selected junction, and a scan line crosses the table each time fresh readings land. Figures are hairline readouts, not boxed tiles. On phones it stacks: map first, then the columns.

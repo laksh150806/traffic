@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mockup B: Drafting Sheet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="effects.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<style>
+  :root { --paper: #f3f2ee; --sheet: #fbfaf7; --ink: #15171a; --mute: #6b6f75; --line: #d9d7d0; --rule: #15171a; --red: #d7261e; --amber: #d98e00; --green: #1d8f4e;
+    --fx: #d7261e; --fx2: #d7261e; --fxline: #d9d7d0; --fxbg: #fbfaf7; --glyph: #15171a14; }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--paper); color: var(--ink); font: 14px/1.45 "IBM Plex Sans", sans-serif; display: grid; grid-template-columns: 232px 1fr; min-height: 100vh;
+    background-image: linear-gradient(#15171a08 1px, transparent 1px), linear-gradient(90deg, #15171a08 1px, transparent 1px); background-size: 24px 24px; }
+  .mono { font-family: "IBM Plex Mono", monospace; }
+  side { display: flex; flex-direction: column; border-right: 2px solid var(--rule); background: var(--sheet); padding: 22px 18px; gap: 26px; position: sticky; top: 0; height: 100vh; }
+  .brand { font: 800 22px/1 "Archivo"; letter-spacing: -.01em; }
+  .brand small { display: block; margin-top: 6px; font: 500 10px "IBM Plex Mono"; letter-spacing: .14em; color: var(--mute); text-transform: uppercase; }
+  .nav a { display: grid; grid-template-columns: 28px 1fr auto; align-items: baseline; padding: 10px 8px; color: var(--ink); text-decoration: none; border-top: 1px solid var(--line); font: 600 15px "Archivo"; }
+  .nav a:last-child { border-bottom: 1px solid var(--line); }
+  .nav a .i { font: 500 11px "IBM Plex Mono"; color: var(--mute); }
+  .nav a .n { font: 500 11px "IBM Plex Mono"; color: var(--mute); }
+  .nav a.on { background: var(--ink); color: var(--sheet); }
+  .nav a.on .i, .nav a.on .n { color: #fbfaf7aa; }
+  .nav a .n.hot { color: var(--red); }
+  .who { margin-top: auto; border: 1px solid var(--line); padding: 12px; font-size: 13px; }
+  .who b { display: block; font: 700 15px "Archivo"; }
+  .stamp { display: inline-block; margin-top: 8px; padding: 2px 7px; border: 1.5px solid var(--red); color: var(--red); font: 600 10px "IBM Plex Mono"; letter-spacing: .12em; transform: rotate(-2deg); }
+  .btn { height: 36px; padding: 0 16px; border: 1.5px solid var(--ink); background: var(--ink); color: var(--sheet); font: 700 13px "Archivo"; cursor: pointer; }
+  .btn.ghost { background: transparent; color: var(--ink); }
+  .btn.red { background: var(--red); border-color: var(--red); color: #fff; }
+
+  main { padding: 22px 28px 28px; display: flex; flex-direction: column; gap: 18px; }
+  header { display: flex; align-items: end; gap: 18px; border-bottom: 2px solid var(--rule); padding-bottom: 14px; }
+  h1 { font: 800 40px/1 "Archivo"; letter-spacing: -.02em; }
+  .sheetno { font: 500 11px "IBM Plex Mono"; color: var(--mute); letter-spacing: .1em; margin-bottom: 6px; }
+  header .meta { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px; border: 1px solid var(--line); background: var(--sheet); font: 500 12px "IBM Plex Mono"; }
+  .pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+
+  .figures { display: grid; grid-template-columns: repeat(5, 1fr); border: 1.5px solid var(--rule); background: var(--sheet); }
+  .fig { padding: 14px 16px; border-right: 1px solid var(--line); }
+  .fig:last-child { border-right: 0; }
+  .fig label { font: 500 11px "IBM Plex Mono"; letter-spacing: .08em; text-transform: uppercase; color: var(--mute); }
+  .fig .v { font: 800 34px/1.05 "Archivo"; letter-spacing: -.02em; margin-top: 4px; }
+  .fig .v small { font: 500 13px "IBM Plex Mono"; color: var(--mute); }
+  .fig .d { font: 500 12px "IBM Plex Mono"; color: var(--mute); }
+  .red { color: var(--red); } .grn { color: var(--green); }
+
+  .grid { display: grid; grid-template-columns: 1.35fr 1fr; gap: 18px; }
+  .panel { border: 1.5px solid var(--rule); background: var(--sheet); display: flex; flex-direction: column; }
+  .panel > h2 { display: flex; justify-content: space-between; align-items: baseline; padding: 10px 14px; border-bottom: 1px solid var(--line); font: 700 14px "Archivo"; }
+  .panel > h2 span { font: 500 11px "IBM Plex Mono"; color: var(--mute); }
+  #map { height: 470px; }
+  .leaflet-tile-pane { filter: grayscale(1) contrast(1.05); }
+  .maptools { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); align-items: center; }
+  .maptools .k { display: flex; gap: 14px; margin-left: auto; font: 500 12px "IBM Plex Mono"; color: var(--mute); }
+  .maptools .k span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; background: var(--c); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font: 500 10.5px "IBM Plex Mono"; letter-spacing: .08em; text-transform: uppercase; color: var(--mute); padding: 8px 14px; border-bottom: 1px solid var(--line); }
+  td { padding: 8px 14px; border-bottom: 1px solid #ebe9e3; }
+  td.num { font-family: "IBM Plex Mono"; text-align: right; }
+  tr.sel td { background: #15171a0a; } tr.sel td:first-child { box-shadow: inset 3px 0 var(--red); }
+  .lv { display: inline-block; width: 64px; height: 6px; background: #e6e4dd; position: relative; vertical-align: middle; }
+  .lv i { position: absolute; inset: 0 auto 0 0; background: var(--c); }
+  .detail { display: grid; grid-template-columns: 1fr 1fr; border-top: 1.5px solid var(--rule); }
+  .detail > div { padding: 12px 14px; }
+  .detail > div + div { border-left: 1px solid var(--line); }
+  .appr { display: grid; grid-template-columns: 52px 1fr 36px; gap: 8px; align-items: center; font: 500 11px "IBM Plex Mono"; padding: 2px 0; }
+  .appr .lv { width: 100%; }
+  .acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .flap span { background: #15171a; color: #fbfaf7; }
+  .brandbox { position: relative; padding: 10px; margin: -10px; overflow: hidden; } .brandbox > :not(canvas) { position: relative; z-index: 1; }
+  .mapbox { position: relative; }
+  .bwrap { display: grid; grid-template-columns: 130px 1fr; border-bottom: 1px solid var(--line); }
+  .bwrap .branch { padding: 8px 0 8px 22px; border-right: 1px solid var(--line); font: 600 13px "Archivo"; }
+  .bwrap .branch small { display: block; font: 500 10.5px "IBM Plex Mono"; color: var(--mute); }
+  .view { display: none; } .view.on { display: block; }
+  .detail .folder b { font: 700 15px "Archivo"; } .detail .folder small { margin-left: auto; font: 500 11px "IBM Plex Mono"; color: var(--mute); }
+  .liquid { color: var(--ink); }
+.tint{filter:grayscale(1) contrast(.9) brightness(1.05)}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute"><filter id="lg"><feTurbulence type="fractalNoise" baseFrequency=".01 .03" numOctaves="2" seed="4"/><feDisplacementMap in="SourceGraphic" scale="30" xChannelSelector="R" yChannelSelector="G"/></filter></svg>
+<side>
+  <div class="brandbox"><canvas data-glitch></canvas><div class="brand"><span data-tech>Signal Desk</span><small>Chennai · 69 junctions</small></div></div>
+  <div class="nav">
+    <a class="on" href="#"><span class="i">01</span>Control room<span class="n">map</span></a>
+    <a href="#"><span class="i">02</span>Junctions<span class="n">69</span></a>
+    <a href="#"><span class="i">03</span>Incidents<span class="n hot">3 open</span></a>
+  </div>
+  <button class="btn red">Recalculate plans</button>
+  <div class="who"><span class="mono" style="font-size:11px;color:var(--mute)">SIGNED IN AS</span><b>Operator</b>can hold signals and log incidents<br /><span class="stamp">ROLE · OPERATOR</span></div>
+</side>
+<main>
+  <header>
+    <div><div class="sheetno">SHEET 01 · CONTROL ROOM · <span data-flap>18:42:07</span> IST</div><h1 data-tech>Seven junctions jammed</h1></div>
+    <div class="meta"><span class="pill"><i></i>Live · read 4 s ago</span><span class="pill">Rain 2.6 mm/h</span><button class="btn ghost">Export CSV</button></div>
+  </header>
+  <section class="figures gb">
+    <div class="fig"><label>Jammed</label><div class="v red"><span data-flap>7</span><small> / 69</small></div><div class="d">+2 in 10 min</div></div>
+    <div class="fig"><label>Busy</label><div class="v"><span data-flap>21</span><small> / 69</small></div><div class="d">steady</div></div>
+    <div class="fig"><label>Vehicles queued</label><div class="v"><span data-flap>4,812</span></div><div class="d">modelled</div></div>
+    <div class="fig"><label>Wait vs fixed</label><div class="v grn"><span data-flap>−18</span><small>%</small></div><div class="d">61 of 69 better</div></div>
+    <div class="fig"><label>Open incidents</label><div class="v"><span data-flap>3</span></div><div class="d">1 lane closure</div></div>
+  </section>
+  <section class="grid">
+    <div class="panel gb">
+      <h2>City map <span>congestion · click a junction</span></h2>
+      <div class="mapbox" data-field><div id="map"></div></div>
+      <div class="maptools liquid"><button class="btn ghost">Congestion</button><button class="btn ghost" style="border-color:var(--line)">Road speeds</button><button class="btn ghost" style="border-color:var(--line)">Plan a route</button><div class="k"><span style="--c:var(--green)">Free</span><span style="--c:var(--amber)">Busy</span><span style="--c:var(--red)">Jammed</span></div></div>
+    </div>
+    <div class="panel gb">
+      <h2>Worst junctions <span>by degree of saturation</span></h2>
+      <div class="bwrap"><div class="branch"><span class="trace"></span><button data-show="v1">Worst now<small>by saturation</small></button><button data-show="v2">Next 24 h<small>spiral</small></button><button data-show="v3">Route<small>A to B</small></button></div><div><div class="view on" id="v1"><table><thead><tr><th>#</th><th>Junction</th><th>Load</th><th style="text-align:right">Sat.</th></tr></thead><tbody id="rows"></tbody></table></div><div class="view" id="v2"><div data-spiral></div></div><div class="view" id="v3"><p style="padding:14px;color:var(--mute)">Route planner goes here.</p></div></div></div>
+      <div class="detail">
+        <div><div class="mono" style="font-size:11px;color:var(--mute)">SELECTED</div><b style="font:700 17px Archivo" data-flap>Kathipara</b><div style="font-size:12px;color:var(--mute)">GST Corridor · cycle 120 s</div>
+          <div class="acts"><button class="btn ghost">Hold</button><button class="btn ghost">Incident</button><button class="btn">Open ›</button></div>
+          <div class="folder" style="margin-top:12px"><button class="fhead"><svg viewBox="0 0 44 30"><path d="M1 5h14l4 4h24v20H1z" fill="#e6e4dd" stroke="#15171a"/><path class="front" d="M1 12h42v17H1z" fill="#fbfaf7" stroke="#d7261e"/></svg><b>Files</b><small>5</small></button>
+          <div class="files"><a href="#" style="--i:0">Signal plan</a><a href="#" style="--i:1">Replay</a><a href="#" style="--i:2">Model</a><a href="#" style="--i:3">Cameras</a><a href="#" style="--i:4">Counts</a></div></div></div>
+        <div>
+          <div class="appr">NORTH<span class="lv"><i style="width:92%;--c:var(--red)"></i></span>38 s</div>
+          <div class="appr">EAST<span class="lv"><i style="width:70%;--c:var(--amber)"></i></span>26 s</div>
+          <div class="appr">SOUTH<span class="lv"><i style="width:84%;--c:var(--red)"></i></span>34 s</div>
+          <div class="appr">WEST<span class="lv"><i style="width:40%;--c:var(--green)"></i></span>17 s</div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="data.js"></script>
+<script>
+  const col = { high: "#d7261e", moderate: "#d98e00", low: "#1d8f4e" };
+  const map = L.map("map", { zoomControl: false, attributionControl: false }).setView([13.03, 80.2], 11);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{className:"tint"}).addTo(map);
+  J.forEach((j) => L.circleMarker([j.lat, j.lng], { radius: j.level === "high" ? 7 : 5, color: "#15171a", weight: 1, fillColor: col[j.level], fillOpacity: 1 }).addTo(map));
+  const worst = [...J].sort((a, b) => b.load - a.load).slice(0, 9);
+  document.getElementById("rows").innerHTML = worst.map((j, i) => `<tr class="${j.name.startsWith("Kathipara") || i === 2 ? "sel" : ""}"><td class="mono">${String(i + 1).padStart(2, "0")}</td><td>${j.name}</td><td><span class="lv"><i style="width:${Math.min(100, j.load * 90)}%;--c:${col[j.level]}"></i></span></td><td class="num">${j.load.toFixed(2)}</td></tr>`).join("");
+  document.querySelectorAll("[data-show]").forEach((b) => b.addEventListener("click", () => document.querySelectorAll(".view").forEach((v) => v.classList.toggle("on", v.id === b.dataset.show))));
+</script>
+<script src="effects.js"></script>
+</body>
+</html>

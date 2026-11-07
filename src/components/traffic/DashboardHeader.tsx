@@ -12,29 +12,26 @@ function timeAgo(iso: string | null) {
   return `${Math.round(minutes / 60)} h ago`;
 }
 
+/** A segmented ring that turns while the system is live: the same idea as the control-room dial, small. */
 function Mark() {
   return (
-    <svg viewBox="0 0 64 64" className="h-9 w-9" aria-hidden>
-      <defs>
-        <radialGradient id="mark-planet" cx="35%" cy="30%" r="80%">
-          <stop offset="0" stopColor="#7fe7ff" />
-          <stop offset="0.55" stopColor="#4a6df0" />
-          <stop offset="1" stopColor="#1a1650" />
-        </radialGradient>
-      </defs>
-      <ellipse
+    <svg viewBox="0 0 64 64" className="ring-mark h-9 w-9" aria-hidden>
+      <g className="ring-outer" fill="none" stroke="var(--primary)" strokeWidth="2.2">
+        <circle cx="32" cy="32" r="28" strokeDasharray="30 8 12 8" opacity="0.9" />
+      </g>
+      <g className="ring-inner" fill="none" stroke="var(--primary)" strokeWidth="1.4">
+        <circle cx="32" cy="32" r="20" strokeDasharray="4 5" opacity="0.6" />
+      </g>
+      <circle cx="32" cy="32" r="6" fill="var(--stark-red)" />
+      <circle
         cx="32"
-        cy="34"
-        rx="27"
-        ry="9"
+        cy="32"
+        r="11"
         fill="none"
-        stroke="#a78bfa"
-        strokeWidth="2"
-        transform="rotate(-24 32 34)"
-        opacity="0.9"
+        stroke="var(--stark-red)"
+        strokeWidth="1"
+        opacity="0.5"
       />
-      <circle cx="32" cy="32" r="14" fill="url(#mark-planet)" />
-      <circle cx="26" cy="28" r="2" fill="#7bf0b0" />
     </svg>
   );
 }
@@ -78,11 +75,11 @@ export function DashboardHeader({
     return () => window.clearInterval(id);
   }, []);
   return (
-    <header className="panel live-edge sticky top-3 z-[600] mx-3 mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-2xl px-4 py-2.5 md:mx-4">
+    <header className="hud-bar relative z-[600] flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 md:px-5 lg:absolute lg:inset-x-0 lg:top-0">
       <div className="flex items-center gap-3">
         <Mark />
         <div>
-          <h1 className="text-gradient text-base font-semibold leading-tight md:text-lg">
+          <h1 className="font-brand text-[0.7rem] uppercase leading-tight tracking-[0.18em] text-foreground md:tracking-[0.36em] md:text-[0.78rem]">
             Smart Traffic Management
           </h1>
           <p className="meta-label leading-tight">Chennai signal control room</p>

@@ -10,7 +10,12 @@ const files = fs
   .sort();
 const db = new PGlite();
 await db.exec(
-  `CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN; CREATE ROLE service_role NOLOGIN BYPASSRLS;`,
+  `CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN; CREATE ROLE service_role NOLOGIN BYPASSRLS;
+   CREATE SCHEMA auth;
+   CREATE TABLE auth.users (id uuid PRIMARY KEY, email text, raw_user_meta_data jsonb NOT NULL DEFAULT '{}', created_at timestamptz NOT NULL DEFAULT now());
+   CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+   GRANT USAGE ON SCHEMA auth TO anon, authenticated, service_role;
+   GRANT EXECUTE ON FUNCTION auth.uid() TO anon, authenticated, service_role;`,
 );
 
 let failures = 0;
@@ -327,6 +332,109 @@ log(
   log(!readOk.failed, "anon can read the congestion view");
   log(writeBad.failed && writeBad.matches, "anon cannot write signal timings");
   log(ctl.failed && ctl.matches, "anon cannot read the throttle table", ctl.message?.slice(0, 60));
+}
+
+// --- operator accounts, roles and row-level security
+{
+  const ADMIN = "00000000-0000-4000-8000-000000000001";
+  const OPER = "00000000-0000-4000-8000-000000000002";
+  const VIEW = "00000000-0000-4000-8000-000000000003";
+  await db.exec(`INSERT INTO auth.users (id, email, created_at) VALUES
+    ('${ADMIN}', 'chief@example.test', now() - interval '3 minutes'),
+    ('${OPER}', 'desk@example.test', now() - interval '2 minutes'),
+    ('${VIEW}', 'watch@example.test', now() - interval '1 minute')`);
+  const roles = await rows(`SELECT user_id::text u, role FROM operator_profiles`);
+  const roleOf = (u) => roles.find((r) => r.u === u)?.role;
+  log(
+    roleOf(ADMIN) === "admin" && roleOf(OPER) === "viewer" && roleOf(VIEW) === "viewer",
+    "first sign-up is admin, later ones start as viewers",
+    JSON.stringify(roles),
+  );
+
+  // Run SQL as a signed-in person: the authenticated role with their id in the JWT.
+  const as = async (uid, sql, pattern) => {
+    await db.exec(`SET ROLE authenticated; SELECT set_config('request.jwt.claim.sub', '${uid}', false)`);
+    const r = await fails(sql, pattern);
+    await db.exec(`RESET ROLE; SELECT set_config('request.jwt.claim.sub', '', false)`);
+    return r;
+  };
+  const hold = (min) =>
+    `INSERT INTO signal_holds (junction_id, road_id, reason, ends_at) VALUES (2, 5, 'ambulance on approach', now() + interval '${min} minutes')`;
+  const incident = `INSERT INTO incidents (junction_id, road_id, kind, severity, ends_at) VALUES (2, 6, 'ACCIDENT', 3, now() + interval '30 minutes')`;
+
+  const promoteByViewer = await as(VIEW, `SELECT set_operator_role('${OPER}', 'operator')`, "admin");
+  log(promoteByViewer.failed && promoteByViewer.matches, "a viewer cannot change roles");
+  const promote = await as(ADMIN, `SELECT set_operator_role('${OPER}', 'operator')`);
+  log(!promote.failed, "an admin can promote someone to operator", promote.message);
+
+  const viewerHold = await as(VIEW, hold(5), "row-level security");
+  log(viewerHold.failed && viewerHold.matches, "a viewer cannot hold a signal", viewerHold.message?.slice(0, 70));
+  const viewerIncident = await as(VIEW, incident, "row-level security");
+  log(viewerIncident.failed && viewerIncident.matches, "a viewer cannot report an incident");
+  const anonHold = await fails(`SET ROLE anon; ${hold(5)}`, "permission denied");
+  await db.exec(`RESET ROLE`);
+  log(anonHold.failed && anonHold.matches, "a signed-out visitor cannot hold a signal");
+
+  const opHold = await as(OPER, hold(5));
+  log(!opHold.failed, "an operator can hold a signal", opHold.message);
+  const second = await as(OPER, hold(5), "already has a signal held");
+  log(second.failed && second.matches, "a second live hold at the same junction is rejected");
+  const tooLong = await as(OPER, hold(40).replace("(2, 5,", "(3, 9,"), "signal_holds_window_chk");
+  log(tooLong.failed && tooLong.matches, "a hold longer than 15 minutes is rejected");
+  const opIncident = await as(OPER, incident);
+  log(!opIncident.failed, "an operator can report an incident", opIncident.message);
+  const r1 = await one(`SELECT reported_by::text u, severity FROM incidents ORDER BY incident_id DESC LIMIT 1`);
+  log(r1.u === OPER && r1.severity === 3, "the reporter is stamped by the database", JSON.stringify(r1));
+  const forge = await as(
+    OPER,
+    `INSERT INTO incidents (junction_id, road_id, ends_at, reported_by) VALUES (2, 6, now() + interval '5 minutes', '${ADMIN}')`,
+    "permission denied",
+  );
+  log(forge.failed && forge.matches, "an operator cannot sign an incident as someone else");
+
+  const viewerEnd = await as(VIEW, `UPDATE incidents SET ends_at = now() WHERE ends_at > now()`);
+  const stillOpen = await one(`SELECT count(*)::int n FROM incidents WHERE ends_at > now() AND reported_by IS NOT NULL`);
+  log(!viewerEnd.failed && stillOpen.n === 1, "a viewer's update changes nothing (no rows visible to update)");
+  const opDelete = await as(OPER, `DELETE FROM incidents WHERE reported_by IS NOT NULL`);
+  const kept = await one(`SELECT count(*)::int n FROM incidents WHERE reported_by IS NOT NULL`);
+  log(!opDelete.failed && kept.n === 1, "an operator cannot delete incidents");
+  const opEnd = await as(
+    OPER,
+    `UPDATE incidents SET ends_at = now(), ended_by = '${OPER}' WHERE reported_by IS NOT NULL AND ends_at > now()`,
+  );
+  log(!opEnd.failed, "an operator can end an incident", opEnd.message);
+  const adminDelete = await as(ADMIN, `DELETE FROM incidents WHERE reported_by IS NOT NULL`);
+  const gone = await one(`SELECT count(*)::int n FROM incidents WHERE reported_by IS NOT NULL`);
+  log(!adminDelete.failed && gone.n === 0, "an admin can delete an incident");
+
+  const logged = await rows(`SELECT action FROM operator_actions ORDER BY action_id`);
+  const actions = logged.map((r) => r.action).join(",");
+  log(
+    actions === "ROLE_CHANGED,SIGNAL_HELD,INCIDENT_REPORTED,INCIDENT_ENDED,INCIDENT_DELETED",
+    "every operator write leaves one line in the log, in order",
+    actions,
+  );
+  const forgeLog = await as(
+    OPER,
+    `INSERT INTO operator_actions (action) VALUES ('ROLE_CHANGED')`,
+    "permission denied",
+  );
+  log(forgeLog.failed && forgeLog.matches, "nobody can write the log directly");
+  const dispatch = await as(OPER, `SELECT log_dispatch(2, 'Rajiv Gandhi GH', 4)`);
+  const viewerDispatch = await as(VIEW, `SELECT log_dispatch(2, 'x', 1)`, "operator");
+  log(!dispatch.failed && viewerDispatch.failed, "only operators can log a dispatch");
+
+  const lastAdmin = await as(ADMIN, `SELECT set_operator_role('${ADMIN}', 'viewer')`, "admin must remain");
+  log(lastAdmin.failed && lastAdmin.matches, "the last admin cannot demote themselves");
+  const selfPromote = await as(VIEW, `UPDATE operator_profiles SET role = 'admin' WHERE user_id = '${VIEW}'`, "permission denied");
+  log(selfPromote.failed && selfPromote.matches, "nobody can edit their own role column");
+  const rename = await as(VIEW, `UPDATE operator_profiles SET display_name = 'Night watch' WHERE user_id = '${VIEW}'`);
+  log(!rename.failed, "people can rename themselves");
+
+  await db.exec(`SET ROLE authenticated; SELECT set_config('request.jwt.claim.sub', '${OPER}', false)`);
+  const board = await rows(`SELECT action, actor_name FROM v_operator_log ORDER BY action_id DESC LIMIT 1`);
+  await db.exec(`RESET ROLE`);
+  log(board[0]?.action === "AMBULANCE_DISPATCHED" && board[0]?.actor_name === "desk", "operator log view names the actor", JSON.stringify(board));
 }
 
 console.log(out.join("\n"));

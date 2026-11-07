@@ -50,10 +50,11 @@ function createSupabaseClient() {
     global: {
       fetch: createSupabaseFetch(SUPABASE_PUBLISHABLE_KEY),
     },
-    // The dashboard has no sign-in, so there is no session to keep.
+    // Operators sign in from the browser, so the session is kept there. On the server there is
+    // no one to sign in and nowhere to keep a session.
     auth: {
-      persistSession: false,
-      autoRefreshToken: false,
+      persistSession: typeof window !== "undefined",
+      autoRefreshToken: typeof window !== "undefined",
     },
   });
 }

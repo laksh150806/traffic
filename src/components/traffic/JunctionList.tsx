@@ -113,7 +113,7 @@ export function JunctionList({ junctions, selectedId, onSelect, loading }: Props
                   aria-current={active ? "true" : undefined}
                   className={`flex min-h-11 w-full items-center gap-2 rounded-md border px-2.5 py-2 text-left transition-data ${
                     active
-                      ? "border-primary/50 bg-primary/12 shadow-[0_0_0_1px_oklch(0.82_0.13_205/0.2),0_12px_30px_-16px_var(--primary)]"
+                      ? "border-primary/50 bg-primary/12 shadow-[0_0_0_1px_oklch(0.95_0.004_260/0.2),0_12px_30px_-16px_var(--primary)]"
                       : "border-transparent hover:border-white/10 hover:bg-white/6"
                   }`}
                 >

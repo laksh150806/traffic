@@ -16,6 +16,9 @@ export type Database = {
       };
       incidents: {
         Row: {
+          severity: number;
+          reported_by: string | null;
+          ended_by: string | null;
           created_at: string;
           ends_at: string;
           incident_id: number;
@@ -26,6 +29,9 @@ export type Database = {
           starts_at: string;
         };
         Insert: {
+          severity?: number;
+          reported_by?: string | null;
+          ended_by?: string | null;
           created_at?: string;
           ends_at: string;
           incident_id?: number;
@@ -36,6 +42,9 @@ export type Database = {
           starts_at?: string;
         };
         Update: {
+          severity?: number;
+          reported_by?: string | null;
+          ended_by?: string | null;
           created_at?: string;
           ends_at?: string;
           incident_id?: number;
@@ -45,6 +54,24 @@ export type Database = {
           road_id?: number;
           starts_at?: string;
         };
+        Relationships: [];
+      };
+      operator_profiles: {
+        Row: { user_id: string; display_name: string; role: string; created_at: string };
+        Insert: { user_id?: string; display_name?: string; role?: string; created_at?: string };
+        Update: { user_id?: string; display_name?: string; role?: string; created_at?: string };
+        Relationships: [];
+      };
+      operator_actions: {
+        Row: { action_id: number; actor: string | null; action: string; junction_id: number | null; detail: Json; at: string };
+        Insert: { action_id?: number; actor?: string | null; action?: string; junction_id?: number | null; detail?: Json; at?: string };
+        Update: { action_id?: number; actor?: string | null; action?: string; junction_id?: number | null; detail?: Json; at?: string };
+        Relationships: [];
+      };
+      signal_holds: {
+        Row: { hold_id: number; junction_id: number; road_id: number; reason: string; held_by: string | null; released_by: string | null; starts_at: string; ends_at: string };
+        Insert: { hold_id?: number; junction_id?: number; road_id?: number; reason?: string; held_by?: string | null; released_by?: string | null; starts_at?: string; ends_at?: string };
+        Update: { hold_id?: number; junction_id?: number; road_id?: number; reason?: string; held_by?: string | null; released_by?: string | null; starts_at?: string; ends_at?: string };
         Relationships: [];
       };
       phase_log: {
@@ -528,8 +555,48 @@ export type Database = {
         Row: { seconds: number | null; window_min: number | null };
         Relationships: [];
       };
+      v_operator_log: {
+        Row: {
+          action_id: number;
+          at: string;
+          action: string;
+          junction_id: number | null;
+          junction_name: string | null;
+          actor_name: string | null;
+          actor_role: string | null;
+          detail: Json;
+        };
+        Relationships: [];
+      };
+      v_incident_board: {
+        Row: {
+          incident_id: number;
+          junction_id: number;
+          road_id: number;
+          kind: string;
+          note: string | null;
+          severity: number;
+          starts_at: string;
+          ends_at: string;
+          junction_name: string | null;
+          zone: string | null;
+          direction: string | null;
+          active: boolean;
+          reported_by_name: string | null;
+          ended_by_name: string | null;
+        };
+        Relationships: [];
+      };
     };
     Functions: {
+      set_operator_role: {
+        Args: { p_user: string; p_role: string };
+        Returns: undefined;
+      };
+      log_dispatch: {
+        Args: { p_junction: number; p_hospital: string; p_stops: number };
+        Returns: number;
+      };
       apply_green_allocations: {
         Args: { p: Json };
         Returns: number;

@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mockup A: Tactical</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Inter+Tight:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="effects.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<style>
+  :root {
+    --bg: #0a0b0c; --panel: #111316; --panel2: #15181c; --line: #23272c; --text: #eceeef; --mute: #8a9097;
+    --amber: #ffb020; --red: #ff4d3d; --green: #3ddc84; --cut: 10px;
+    --fx: #ffb020; --fx2: #ff4d3d; --fxline: #2a2e33; --fxbg: #15181c; --glyph: #ffffff12;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.45 "Inter Tight", sans-serif; min-height: 100vh; }
+  .mono { font-family: "JetBrains Mono", monospace; }
+  .cut { clip-path: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut)); }
+
+  nav { position: relative; display: flex; align-items: stretch; height: 56px; border-bottom: 1px solid var(--line); background: #0d0f11; padding: 0 20px; gap: 28px; }
+  .brand { display: flex; align-items: center; gap: 10px; font: 700 17px "Chakra Petch"; letter-spacing: .12em; }
+  .brand i { width: 22px; height: 22px; display: grid; grid-template-rows: repeat(3, 1fr); gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 4px; }
+  .brand i b { border-radius: 50%; } .brand i b:nth-child(1){background:var(--red)} .brand i b:nth-child(2){background:var(--amber)} .brand i b:nth-child(3){background:var(--green)}
+  .tabs { display: flex; gap: 4px; }
+  .tabs a { display: flex; align-items: center; gap: 8px; padding: 0 16px; color: var(--mute); text-decoration: none; font: 600 13px "Chakra Petch"; letter-spacing: .1em; text-transform: uppercase; border-bottom: 2px solid transparent; }
+  .tabs a.on { color: var(--text); border-color: var(--amber); background: linear-gradient(0deg, #ffb02014, transparent); }
+  .tabs a .n { font: 500 10px "JetBrains Mono"; padding: 1px 5px; border: 1px solid var(--line); border-radius: 3px; }
+  .tabs a .n.hot { color: var(--red); border-color: #ff4d3d55; }
+  .right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+  .chip { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px; border: 1px solid var(--line); background: var(--panel); color: var(--mute); font: 500 11px "JetBrains Mono"; letter-spacing: .06em; text-transform: uppercase; }
+  .chip b { color: var(--text); font-weight: 500; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .btn { height: 34px; padding: 0 16px; border: 0; background: var(--amber); color: #111; font: 700 12px "Chakra Petch"; letter-spacing: .12em; text-transform: uppercase; cursor: pointer; }
+  .btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  .role { display: flex; align-items: center; gap: 10px; padding-left: 14px; border-left: 1px solid var(--line); }
+  .role .av { width: 30px; height: 30px; display: grid; place-items: center; background: var(--panel2); border: 1px solid var(--line); font: 700 12px "Chakra Petch"; }
+  .role small { display: block; color: var(--amber); font: 500 10px "JetBrains Mono"; letter-spacing: .1em; }
+
+  main { display: grid; grid-template-columns: 1fr 380px; grid-template-rows: auto 1fr auto; gap: 14px; padding: 14px 20px 20px; height: calc(100vh - 56px); }
+  .kpis { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); padding: 12px 16px; position: relative; }
+  .kpi label { color: var(--mute); font: 600 11px "Chakra Petch"; letter-spacing: .14em; text-transform: uppercase; }
+  .kpi .v { font: 600 30px "Chakra Petch"; line-height: 1.1; margin-top: 2px; }
+  .kpi .v small { font-size: 13px; color: var(--mute); margin-left: 4px; }
+  .kpi .d { font: 500 11px "JetBrains Mono"; color: var(--mute); }
+  .kpi .d.good { color: var(--green); } .kpi .d.bad { color: var(--red); }
+  .kpi::after { content: ""; position: absolute; left: 0; top: 0; width: 3px; height: 100%; background: var(--line); }
+  .kpi.hot::after { background: var(--red); } .kpi.warn::after { background: var(--amber); } .kpi.ok::after { background: var(--green); }
+  .spark { position: absolute; right: 14px; bottom: 12px; width: 90px; height: 30px; }
+
+  .mapwrap { position: relative; border: 1px solid var(--line); overflow: hidden; }
+  #map { position: absolute; inset: 0; background: #0b0c0d; }
+  .leaflet-tile-pane { filter: grayscale(1) contrast(1.15) brightness(.85); }
+  .maphead { position: absolute; z-index: 500; left: 12px; top: 12px; right: 12px; display: flex; gap: 8px; pointer-events: none; }
+  .maphead > * { pointer-events: auto; }
+  .seg { display: flex; border: 1px solid var(--line); background: #0d0f11ee; }
+  .seg button { background: none; border: 0; color: var(--mute); padding: 7px 12px; font: 600 11px "Chakra Petch"; letter-spacing: .1em; text-transform: uppercase; cursor: pointer; }
+  .seg button.on { color: #111; background: var(--amber); }
+  .search { flex: 0 0 280px; height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid var(--line); background: #0d0f11ee; color: var(--mute); font-size: 13px; }
+  .legend { margin-left: auto; display: flex; gap: 12px; align-items: center; padding: 0 12px; border: 1px solid var(--line); background: #0d0f11ee; font: 500 11px "JetBrains Mono"; color: var(--mute); }
+  .legend span::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; background: var(--c); }
+  .reticle { position: absolute; z-index: 450; width: 46px; height: 46px; border: 1px solid var(--amber); transform: translate(-50%, -50%); pointer-events: none; }
+  .reticle::before, .reticle::after { content: ""; position: absolute; background: var(--amber); }
+  .reticle::before { left: 50%; top: -8px; bottom: -8px; width: 1px; } .reticle::after { top: 50%; left: -8px; right: -8px; height: 1px; }
+  .tag { position: absolute; z-index: 460; transform: translate(30px, -50%); padding: 5px 9px; background: var(--amber); color: #111; font: 700 11px "Chakra Petch"; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+
+  aside { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+  .card { background: var(--panel); border: 1px solid var(--line); }
+  .card h3 { display: flex; justify-content: space-between; align-items: center; padding: 11px 14px; border-bottom: 1px solid var(--line); font: 600 12px "Chakra Petch"; letter-spacing: .14em; text-transform: uppercase; color: var(--mute); }
+  .card h3 a { color: var(--amber); font: 500 11px "JetBrains Mono"; text-decoration: none; letter-spacing: 0; text-transform: none; }
+  .sel { padding: 14px; }
+  .sel .name { font: 600 20px "Chakra Petch"; letter-spacing: .02em; }
+  .sel .zone { color: var(--mute); font-size: 12px; margin-bottom: 12px; }
+  .badge { display: inline-block; padding: 2px 8px; font: 600 10px "JetBrains Mono"; letter-spacing: .08em; text-transform: uppercase; border: 1px solid; }
+  .phase { display: grid; grid-template-columns: 120px 1fr; gap: 14px; align-items: center; }
+  .rows div { display: grid; grid-template-columns: 54px 1fr 40px; align-items: center; gap: 8px; font: 500 11px "JetBrains Mono"; color: var(--mute); padding: 3px 0; }
+  .bar { height: 6px; background: var(--panel2); position: relative; }
+  .bar i { position: absolute; inset: 0 auto 0 0; background: var(--c, var(--green)); }
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+  .list { overflow: auto; flex: 1; }
+  .item { display: grid; grid-template-columns: 22px 1fr 50px 38px; gap: 10px; align-items: center; padding: 9px 14px; border-bottom: 1px solid #1a1d21; font-size: 13px; }
+  .item .rk { font: 500 11px "JetBrains Mono"; color: var(--mute); }
+  .item .pct { font: 500 12px "JetBrains Mono"; text-align: right; }
+
+  .timebar { grid-column: 1 / -1; display: flex; align-items: center; gap: 16px; padding: 10px 16px; background: var(--panel); border: 1px solid var(--line); }
+  .timebar .clock { font: 600 22px "Chakra Petch"; }
+  .track { flex: 1; height: 26px; position: relative; display: flex; align-items: flex-end; gap: 2px; }
+  .track i { flex: 1; background: #2a2e33; }
+  .track .now { position: absolute; left: 41%; top: -4px; bottom: -4px; width: 2px; background: var(--amber); }
+  .ticks { display: flex; justify-content: space-between; font: 500 10px "JetBrains Mono"; color: var(--mute); width: 100%; }
+  nav > :not(canvas) { position: relative; z-index: 1; }
+  .branchcard { display: grid; grid-template-columns: 128px 1fr; flex: 1; min-height: 0; }
+  .branchcard .branch { padding-top: 10px; border-right: 1px solid var(--line); font: 600 12px "Chakra Petch"; letter-spacing: .1em; text-transform: uppercase; }
+  .branchcard .branch small { display: block; font: 500 10px "JetBrains Mono"; color: var(--mute); letter-spacing: 0; text-transform: none; }
+  .view { display: none; min-height: 0; overflow: auto; } .view.on { display: block; }
+  .floatfolder { position: absolute; z-index: 500; left: 12px; bottom: 12px; width: 330px; padding: 12px; border: 1px solid var(--line); }
+  .floatfolder b { font: 600 13px "Chakra Petch"; letter-spacing: .1em; text-transform: uppercase; } .floatfolder small { margin-left: auto; color: var(--mute); font: 500 11px "JetBrains Mono"; }
+.tint{filter:invert(1) hue-rotate(180deg) grayscale(1) brightness(.55) contrast(1.15)}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute"><filter id="lg"><feTurbulence type="fractalNoise" baseFrequency=".01 .03" numOctaves="2" seed="4"/><feDisplacementMap in="SourceGraphic" scale="30" xChannelSelector="R" yChannelSelector="G"/></filter></svg>
+<nav>
+  <canvas data-glitch></canvas>
+  <div class="brand"><i><b></b><b></b><b></b></i><span data-tech>SIGNAL OPS</span></div>
+  <div class="tabs">
+    <a class="on" href="#">Control room</a>
+    <a href="#">Junctions <span class="n">69</span></a>
+    <a href="#">Incidents <span class="n hot">3 open</span></a>
+  </div>
+  <div class="right">
+    <span class="chip"><span class="dot"></span>Live · <b>read 4s ago</b></span>
+    <span class="chip">IST <b data-flap>18:42:07</b></span>
+    <button class="btn">Recalculate</button>
+    <div class="role"><div class="av">OP</div><div>Operator<small>CAN CHANGE SIGNALS</small></div></div>
+  </div>
+</nav>
+<main>
+  <section class="kpis">
+    <div class="kpi gb hot"><label>Jammed</label><div class="v" id="kJ"><span data-flap>7</span><small>/ 69</small></div><div class="d bad">+2 in last 10 min</div><svg class="spark" viewBox="0 0 90 30"><polyline fill="none" stroke="#ff4d3d" stroke-width="1.5" points="0,24 12,22 24,23 36,18 48,19 60,14 72,12 90,6"/></svg></div>
+    <div class="kpi gb warn"><label>Busy</label><div class="v"><span data-flap>21</span><small>/ 69</small></div><div class="d">steady</div></div>
+    <div class="kpi gb"><label>Vehicles queued</label><div class="v"><span data-flap>4,812</span></div><div class="d">modelled from demand</div></div>
+    <div class="kpi gb ok"><label>Wait vs fixed timer</label><div class="v"><span data-flap>−18</span><small>%</small></div><div class="d good">adaptive ahead at 61 of 69</div></div>
+    <div class="kpi gb"><label>Rain</label><div class="v"><span data-flap>2.6</span><small>mm/h</small></div><div class="d">capacity × 0.80</div></div>
+  </section>
+
+  <section class="mapwrap cut" data-field>
+    <div id="map"></div>
+    <div class="maphead">
+      <div class="search liquid">⌕ Find a junction or zone</div>
+      <div class="seg liquid"><button class="on">Congestion</button><button>Road speeds</button><button>Route</button></div>
+      <div class="legend liquid"><span style="--c:var(--green)">Free</span><span style="--c:var(--amber)">Busy</span><span style="--c:var(--red)">Jammed</span></div>
+    </div>
+    <div class="floatfolder liquid folder gb">
+      <button class="fhead"><svg viewBox="0 0 44 30"><path d="M1 5h14l4 4h24v20H1z" fill="#1b1f24" stroke="#8a9097"/><path class="front" d="M1 12h42v17H1z" fill="#111316" stroke="#ffb020"/></svg><b>Kathipara files</b><small>5 files</small></button>
+      <div class="files"><a href="#" style="--i:0">Signal plan</a><a href="#" style="--i:1">Replay</a><a href="#" style="--i:2">Model</a><a href="#" style="--i:3">Cameras</a><a href="#" style="--i:4">Counts</a></div>
+    </div>
+  </section>
+
+  <aside>
+    <div class="card cut sel gb">
+      <div style="display:flex;justify-content:space-between;align-items:start"><div><div class="name" data-flap>Kathipara Junction</div><div class="zone">GST Corridor · 4 approaches · Webster plan</div></div><span class="badge" style="color:var(--red)">Jammed</span></div>
+      <div class="phase">
+        <svg viewBox="0 0 120 120" width="120" height="120">
+          <circle cx="60" cy="60" r="50" fill="none" stroke="#23272c" stroke-width="10"/>
+          <circle cx="60" cy="60" r="50" fill="none" stroke="#3ddc84" stroke-width="10" stroke-dasharray="95 314" transform="rotate(-90 60 60)"/>
+          <circle cx="60" cy="60" r="50" fill="none" stroke="#ffb020" stroke-width="10" stroke-dasharray="10 314" stroke-dashoffset="-97" transform="rotate(-90 60 60)"/>
+          <circle cx="60" cy="60" r="50" fill="none" stroke="#ff4d3d" stroke-width="10" stroke-dasharray="200 314" stroke-dashoffset="-109" transform="rotate(-90 60 60)"/>
+          <text x="60" y="58" text-anchor="middle" fill="#eceeef" font-family="Chakra Petch" font-size="26" font-weight="600">23</text>
+          <text x="60" y="76" text-anchor="middle" fill="#8a9097" font-family="JetBrains Mono" font-size="9">S GREEN · SEC</text>
+        </svg>
+        <div class="rows">
+          <div>NORTH<span class="bar"><i style="width:92%;--c:var(--red)"></i></span>38 s</div>
+          <div>EAST<span class="bar"><i style="width:70%;--c:var(--amber)"></i></span>26 s</div>
+          <div>SOUTH<span class="bar"><i style="width:84%;--c:var(--red)"></i></span>34 s</div>
+          <div>WEST<span class="bar"><i style="width:40%"></i></span>17 s</div>
+        </div>
+      </div>
+      <div class="actions"><button class="btn ghost">Hold signal</button><button class="btn ghost">Report incident</button><button class="btn ghost">Send ambulance</button><button class="btn">Open junction ›</button></div>
+    </div>
+    <div class="card cut gb branchcard">
+      <div class="branch"><span class="trace"></span>
+        <button data-show="v1">Worst now<small>7 jammed</small></button>
+        <button data-show="v2">Next 24 h<small>spiral</small></button>
+        <button data-show="v3">Route<small>A to B</small></button>
+        <button data-show="v4">Network<small>69 sites</small></button>
+      </div>
+      <div style="min-height:0;display:flex;flex-direction:column">
+        <div class="view on list" id="v1"><div id="list"></div></div>
+        <div class="view" id="v2"><div data-spiral></div><p class="mono" style="font-size:11px;color:var(--mute);padding:8px 12px">Scroll to wind. Worst hour ahead 18:00.</p></div>
+        <div class="view" id="v3"><p style="padding:14px;color:var(--mute)">Route planner goes here.</p></div>
+        <div class="view" id="v4"><p style="padding:14px;color:var(--mute)">Network detail goes here.</p></div>
+      </div>
+    </div>
+  </aside>
+
+  <section class="timebar cut">
+    <div><div class="mono" style="font-size:10px;color:var(--mute)">LIVE</div><div class="clock">18:42</div></div>
+    <div style="flex:1"><div class="track" id="track"><span class="now"></span></div><div class="ticks"><span>00</span><span>04</span><span>08</span><span>12</span><span>16</span><span>20</span><span>24</span></div></div>
+    <button class="btn ghost">Evening peak</button><button class="btn ghost">Now</button>
+  </section>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="data.js"></script>
+<script>
+  const col = { high: "#ff4d3d", moderate: "#ffb020", low: "#3ddc84" };
+  const map = L.map("map", { zoomControl: false, attributionControl: false }).setView([13.03, 80.2], 11);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{className:"tint"}).addTo(map);
+  J.forEach((j) => L.circleMarker([j.lat, j.lng], { radius: j.level === "high" ? 7 : 5, color: col[j.level], fillColor: col[j.level], fillOpacity: .9, weight: j.level === "high" ? 6 : 1, opacity: j.level === "high" ? .35 : 1 }).addTo(map));
+  const k = J.find((j) => j.name.startsWith("Kathipara"));
+  const place = () => { const p = map.latLngToContainerPoint([k.lat, k.lng]); document.querySelectorAll(".reticle,.tag").forEach((e) => { e.style.left = p.x + "px"; e.style.top = p.y + "px"; }); };
+  const wrap = document.querySelector(".mapwrap");
+  wrap.insertAdjacentHTML("beforeend", '<div class="reticle"></div><div class="tag">Kathipara · watching</div>'); place(); map.on("move zoom", place);
+  document.getElementById("list").innerHTML = [...J].sort((a, b) => b.load - a.load).slice(0, 12).map((j, i) => `<div class="item"><span class="rk">${String(i + 1).padStart(2, "0")}</span><span>${j.name}</span><span class="bar"><i style="width:${Math.min(100, j.load * 90)}%;--c:${col[j.level]}"></i></span><span class="pct">${Math.round(j.load * 100)}%</span></div>`).join("");
+  document.getElementById("track").insertAdjacentHTML("afterbegin", Array.from({ length: 96 }, (_, i) => { const h = i / 4; const v = .25 + .6 * Math.exp(-((h - 9.5) ** 2) / 3) + .7 * Math.exp(-((h - 18.5) ** 2) / 4); return `<i style="height:${Math.min(100, v * 100)}%;${v > .8 ? "background:#ff4d3d88" : v > .6 ? "background:#ffb02077" : ""}"></i>`; }).join(""));
+  document.querySelectorAll("[data-show]").forEach((b) => b.addEventListener("click", () => document.querySelectorAll(".view").forEach((v) => v.classList.toggle("on", v.id === b.dataset.show))));
+</script>
+<script src="effects.js"></script>
+</body>
+</html>

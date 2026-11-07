@@ -1,4 +1,7 @@
 import { ArrowRightFromLine, ArrowRightToLine, MapPinCheck, MapPinned, Radio } from "lucide-react";
+import { DecryptText } from "@/components/ops/DecryptText";
+import { DayDial } from "@/components/ops/DayDial";
+import { SignalCompass } from "@/components/ops/SignalCompass";
 import type { JunctionFlow } from "@/lib/traffic-flow";
 import type { SpeedSample } from "@/lib/traffic-history";
 import { formatIstTime, istDate, istHourOf, type JunctionForecast } from "@/lib/forecast";
@@ -15,11 +18,6 @@ const LEVEL_LABEL: Record<string, string> = {
   LOW: "Free flowing",
   MODERATE: "Busy",
   HIGH: "Jammed",
-};
-const BAR: Record<string, string> = {
-  LOW: "bg-signal-low",
-  MODERATE: "bg-signal-moderate",
-  HIGH: "bg-signal-high",
 };
 
 type DayPoint = { hour: number; saturation: number; level: string };
@@ -169,6 +167,7 @@ export function PlaceCard({
   realFlow,
   positionVerified,
   speeds = [],
+  onPickHour,
 }: {
   junction: JunctionSummary;
   forecast: JunctionForecast;
@@ -188,8 +187,9 @@ export function PlaceCard({
   positionVerified?: boolean | undefined;
   /** Real road speeds seen around this junction so far, oldest first. */
   speeds?: SpeedSample[];
+  /** Called with an hour of the day when its spoke on the day dial is clicked. */
+  onPickHour?: (hour: number) => void;
 }) {
-  const hour = Math.floor(istHourOf(at));
   // Signed: negative means the adaptive plan is predicted to wait longer than the timer here.
   const saved =
     forecast.delayFixed > 0
@@ -205,7 +205,9 @@ export function PlaceCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="meta-label">{junction.zone} zone</p>
-          <h2 className="mt-0.5 text-lg font-semibold leading-snug">{junction.name}</h2>
+          <h2 className="mt-0.5 text-lg font-semibold leading-snug">
+            <DecryptText text={junction.name} />
+          </h2>
         </div>
         <span
           className={`transition-data shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${LEVEL_STYLE[junction.congestion_level]}`}
@@ -222,6 +224,8 @@ export function PlaceCard({
       ) : (
         <SignalNow roads={roads} />
       )}
+
+      <SignalCompass roads={roads} forecast={forecast} live={!isForecast} />
 
       {realFlow || positionVerified !== undefined ? (
         <RealTraffic
@@ -259,26 +263,13 @@ export function PlaceCard({
           <p className="meta-label">{weekend ? "A typical weekend day" : "A typical weekday"}</p>
           <p className="text-xs text-muted-foreground">Busiest around {hourLabel(peak.hour)}</p>
         </div>
-        <div
-          className="mt-2 flex h-14 items-end gap-[3px]"
-          role="img"
-          aria-label={`Congestion by hour of the day, busiest around ${hourLabel(peak.hour)}`}
-        >
-          {profile.map((p) => (
-            <span
-              key={p.hour}
-              title={`${hourLabel(p.hour)}: ${LEVEL_LABEL[p.level]?.toLowerCase() ?? p.level}`}
-              className={`flex-1 rounded-sm ${BAR[p.level]} ${p.hour === hour ? "opacity-100 ring-1 ring-white" : "opacity-55"}`}
-              style={{ height: `${Math.max(8, Math.min(100, p.saturation * 75))}%` }}
-            />
-          ))}
-        </div>
-        <div className="mt-1 flex justify-between text-[11px] text-muted-foreground">
-          <span>12 am</span>
-          <span>6 am</span>
-          <span>12 pm</span>
-          <span>6 pm</span>
-          <span>12 am</span>
+        <div className="mt-2">
+          <DayDial
+            profile={profile}
+            hour={istHourOf(at)}
+            label={`Congestion by hour of the day, busiest around ${hourLabel(peak.hour)}`}
+            onPick={onPickHour}
+          />
         </div>
       </div>
 

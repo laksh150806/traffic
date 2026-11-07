@@ -4,6 +4,7 @@ import { FIXED_GREEN, clamp, solveJunction, type ApproachInput } from "@/lib/tra
 import {
   INCIDENT_CAPACITY_FACTOR,
   approachPressure,
+  decideHeldPhase,
   decidePhase,
   effectiveGreenSeconds,
   stepQueue,
@@ -483,6 +484,26 @@ export async function performAdvance() {
   const timings = (timingResult.data ?? []) as TimingRow[];
   if (timings.length === 0) return { ok: true, switched: 0 };
 
+  // Operator holds. A database without the roles migration has no signal_holds table yet; the
+  // controller then runs exactly as before rather than failing.
+  const holdResult = await supabaseAdmin
+    .from("signal_holds")
+    .select("junction_id, road_id, ends_at")
+    .gt("ends_at", new Date().toISOString());
+  const holdByJunction = new Map<number, { roadId: number; endsMs: number }>();
+  if (!holdResult.error) {
+    for (const row of (holdResult.data ?? []) as Array<{
+      junction_id: number;
+      road_id: number;
+      ends_at: string;
+    }>) {
+      holdByJunction.set(row.junction_id, {
+        roadId: row.road_id,
+        endsMs: new Date(row.ends_at).getTime(),
+      });
+    }
+  }
+
   const modelByRoad = new Map<number, PhaseModel>(
     ((modelResult.data ?? []) as PhaseModel[]).map((row) => [row.road_id, row]),
   );
@@ -498,7 +519,7 @@ export async function performAdvance() {
   const stamp = new Date(now).toISOString();
   const changes: Array<{ end_road: number | null; start_road: number; green: number }> = [];
 
-  for (const [, approaches] of byJunction) {
+  for (const [junctionId, approaches] of byJunction) {
     const phaseApproaches: PhaseApproach[] = approaches.map((row) => {
       const model = modelByRoad.get(row.road_id);
       return {
@@ -518,6 +539,19 @@ export async function performAdvance() {
         ),
       };
     });
+
+    const hold = holdByJunction.get(junctionId);
+    if (hold) {
+      const held = decideHeldPhase(phaseApproaches, hold.roadId, hold.endsMs, now);
+      if (held.kind === "switch") {
+        changes.push({
+          end_road: held.decision.endRoadId,
+          start_road: held.decision.startRoadId,
+          green: held.decision.startGreen,
+        });
+      }
+      continue;
+    }
 
     const decision = decidePhase(phaseApproaches, now);
     if (!decision) continue;

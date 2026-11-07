@@ -339,6 +339,37 @@ export function decidePhase(approaches: PhaseApproach[], nowMs: number): PhaseDe
   };
 }
 
+/** Longest green the signal_timings table accepts (timings_green_chk). */
+export const MAX_STORED_GREEN_SEC = 150;
+
+export type HeldPhase = { kind: "keep" } | { kind: "switch"; decision: PhaseDecision } | { kind: "wait" };
+
+/**
+ * An operator holds one approach green until `holdEndsMs`. While the held approach is green the
+ * normal controller is skipped ("keep"); otherwise the green is handed over as soon as the running
+ * green has served its safety floor ("switch"), or the caller waits a step ("wait"). The stored
+ * green covers the rest of the hold, within what the table accepts.
+ */
+export function decideHeldPhase(
+  approaches: PhaseApproach[],
+  heldRoadId: number,
+  holdEndsMs: number,
+  nowMs: number,
+): HeldPhase {
+  const current = approaches.find((row) => row.isGreen);
+  if (current && current.roadId === heldRoadId) return { kind: "keep" };
+  const forced = decideForcedPhase(approaches, heldRoadId, nowMs, MIN_PHASE_SEC);
+  if (!forced) return { kind: "wait" };
+  const remaining = Math.max(0, (holdEndsMs - nowMs) / 1000);
+  return {
+    kind: "switch",
+    decision: {
+      ...forced,
+      startGreen: Math.round(clamp(remaining, MIN_PHASE_SEC, MAX_STORED_GREEN_SEC)),
+    },
+  };
+}
+
 /**
  * Hand the green to one named approach, as an operator or an emergency vehicle asks. The running
  * green is never cut short before `minGreenSec` (the safety floor: a green that has just started

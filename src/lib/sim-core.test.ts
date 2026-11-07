@@ -5,11 +5,13 @@ import {
   MAX_HOLD_SEC,
   MAX_PHASE_SEC,
   MAX_RED_SEC,
+  MAX_STORED_GREEN_SEC,
   MEAN_DAY_FACTOR,
   MIN_PHASE_SEC,
   PREEMPT_MARGIN,
   approachDemandVph,
   approachPressure,
+  decideHeldPhase,
   decidePhase,
   effectiveGreenSeconds,
   incidentRoadId,
@@ -359,5 +361,37 @@ describe("weekend demand", () => {
     const clock = istClock(new Date(Date.UTC(2026, 9, 2, 20, 0)));
     expect(clock.weekend).toBe(true);
     expect(clock.hour).toBeCloseTo(1.5, 5);
+  });
+});
+
+describe("decideHeldPhase", () => {
+  const now = 1_000_000;
+  const arms = (greenRoad: number, greenForSec: number) =>
+    [1, 2, 3].map((roadId) => ({
+      roadId,
+      isGreen: roadId === greenRoad,
+      startedAtMs: now - greenForSec * 1000,
+      allocatedGreen: 30,
+      pressure: 0.5,
+    }));
+
+  it("keeps the held approach green and skips the normal controller", () => {
+    expect(decideHeldPhase(arms(2, 200), 2, now + 60_000, now)).toEqual({ kind: "keep" });
+  });
+
+  it("waits while the running green is inside its safety floor", () => {
+    expect(decideHeldPhase(arms(1, 2), 2, now + 60_000, now)).toEqual({ kind: "wait" });
+  });
+
+  it("hands over for the rest of the hold, within the stored green limits", () => {
+    const held = decideHeldPhase(arms(1, 20), 3, now + 60_000, now);
+    expect(held).toEqual({
+      kind: "switch",
+      decision: { endRoadId: 1, startRoadId: 3, startGreen: 60 },
+    });
+    const long = decideHeldPhase(arms(1, 20), 3, now + 900_000, now);
+    expect(long.kind === "switch" && long.decision.startGreen).toBe(MAX_STORED_GREEN_SEC);
+    const short = decideHeldPhase(arms(1, 20), 3, now + 1_000, now);
+    expect(short.kind === "switch" && short.decision.startGreen).toBe(MIN_PHASE_SEC);
   });
 });

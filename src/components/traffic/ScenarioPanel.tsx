@@ -108,7 +108,7 @@ export function ScenarioPanel({
             onClick={() => choose(id)}
             className={`transition-data flex flex-col items-center gap-1 rounded-xl px-2 py-2 text-xs font-medium ${
               mode === id
-                ? "bg-primary/20 text-primary shadow-[0_0_0_1px_oklch(0.82_0.13_205/0.4),0_6px_18px_-8px_var(--primary)]"
+                ? "bg-primary/20 text-primary shadow-[0_0_0_1px_oklch(0.95_0.004_260/0.4),0_6px_18px_-8px_var(--primary)]"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >

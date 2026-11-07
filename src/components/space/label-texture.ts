@@ -61,7 +61,7 @@ export function makeLabelTexture(lines: LabelLine[], scale = 2) {
   ctx.beginPath();
   if (typeof ctx.roundRect === "function") ctx.roundRect(1, 1, cssWidth - 2, cssHeight - 2, radius);
   else ctx.rect(1, 1, cssWidth - 2, cssHeight - 2);
-  ctx.fillStyle = "rgba(24, 22, 64, 0.72)";
+  ctx.fillStyle = "rgba(12, 12, 14, 0.8)";
   ctx.fill();
   const sheen = ctx.createLinearGradient(0, 0, 0, cssHeight);
   sheen.addColorStop(0, "rgba(255,255,255,0.22)");
@@ -77,7 +77,7 @@ export function makeLabelTexture(lines: LabelLine[], scale = 2) {
   let y = padY;
   for (const line of lines) {
     ctx.font = `${line.weight ?? 500} ${line.size}px ${FONT}`;
-    ctx.fillStyle = line.color ?? "#f1f4ff";
+    ctx.fillStyle = line.color ?? "#f2f2f4";
     ctx.fillText(line.text, padX, y);
     y += line.size * 1.2 + gap;
   }

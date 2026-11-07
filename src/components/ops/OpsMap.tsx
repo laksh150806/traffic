@@ -69,6 +69,35 @@ const PULSE_ICON = L.divIcon({
  * The core of the network, ignoring the few far-out junctions on the Chengalpattu and Ennore
  * roads, so the first view is the city and not half of Tamil Nadu.
  */
+/** How much of each side the floating control columns cover, read from the deck's CSS. */
+function deckPad(map: L.Map) {
+  const css = getComputedStyle(map.getContainer());
+  return {
+    l: parseFloat(css.getPropertyValue("--deck-l")) || 0,
+    r: parseFloat(css.getPropertyValue("--deck-r")) || 0,
+  };
+}
+
+const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+/**
+ * The lock-on reticle on the selected junction: brackets close in, a ring turns, and a tag with
+ * the junction's name and load is projected beside it. Motion is CSS, see .lock-on.
+ */
+function lockIcon(name: string, zone: string, level: string, avg: number) {
+  const tag = level === "HIGH" ? "Jammed" : level === "MODERATE" ? "Busy" : "Free flowing";
+  return L.divIcon({
+    className: `lock-on lock-${level.toLowerCase()}`,
+    html: `<svg viewBox="-40 -40 80 80" width="80" height="80" aria-hidden="true">
+<g class="lock-ring"><circle r="31" fill="none" stroke-dasharray="2 5"/></g>
+<g class="lock-brackets" fill="none"><path d="M-24 -13V-24H-13M13 -24H24V-13M24 13V24H13M-13 24H-24V13"/></g>
+<path class="lock-ticks" d="M0 -39V-34M0 34V39M-39 0H-34M34 0H39"/></svg>
+<div class="lock-tag"><b>${escapeHtml(name)}</b><span>${escapeHtml(zone)} · ${tag} · ${avg} veh</span></div>`,
+    iconSize: [80, 80],
+    iconAnchor: [40, 40],
+  });
+}
+
 function coreBounds(junctions: JunctionSummary[]) {
   const trim = (values: number[]) => {
     const sorted = [...values].sort((a, b) => a - b);
@@ -111,9 +140,10 @@ function Camera({
       if (container.clientWidth < 240 || container.clientHeight < 240) return;
       framed.current = true;
       map.invalidateSize({ animate: false });
+      const pad = deckPad(map);
       map.fitBounds(coreBounds(junctions), {
-        paddingTopLeft: [40, 84],
-        paddingBottomRight: [64, 120],
+        paddingTopLeft: [40 + pad.l, 84],
+        paddingBottomRight: [64 + pad.r, 120],
         maxZoom: 12,
         animate: false,
       });
@@ -132,7 +162,12 @@ function Camera({
     if (!chosen || chosen.route.coordinates.length < 2) return;
     map.fitBounds(
       L.latLngBounds(chosen.route.coordinates.map(([lng, lat]) => [lat, lng] as [number, number])),
-      { padding: [72, 72], maxZoom: 15, animate: !prefersReducedMotion() },
+      {
+        paddingTopLeft: [72 + deckPad(map).l, 96],
+        paddingBottomRight: [72 + deckPad(map).r, 120],
+        maxZoom: 15,
+        animate: !prefersReducedMotion(),
+      },
     );
     // Only refit when the set of routes changes, not when the user flips between them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -149,8 +184,14 @@ function Camera({
     const j = junctions.find((item) => item.junction_id === selectedId);
     if (!j || routes.length > 0) return;
     const zoom = Math.max(map.getZoom(), 13);
-    if (prefersReducedMotion()) map.setView([j.latitude, j.longitude], zoom, { animate: false });
-    else map.flyTo([j.latitude, j.longitude], zoom, { duration: 0.8 });
+    // Centre the junction in the open part of the table, between the two control columns.
+    const pad = deckPad(map);
+    const target = map.unproject(
+      map.project([j.latitude, j.longitude], zoom).add([(pad.r - pad.l) / 2, 0]),
+      zoom,
+    );
+    if (prefersReducedMotion()) map.setView(target, zoom, { animate: false });
+    else map.flyTo(target, zoom, { duration: 0.8 });
   }, [selectedId, junctions, routes.length, map]);
 
   return null;
@@ -229,7 +270,7 @@ function ZoomButtons() {
   return (
     <div
       ref={box}
-      className="absolute right-3 top-1/2 z-[1000] flex -translate-y-1/2 flex-col gap-1.5"
+      className="absolute right-3 top-1/2 z-[1000] flex -translate-y-1/2 flex-col gap-1.5 lg:right-[calc(var(--deck-r)+0.25rem)]"
     >
       <button
         type="button"
@@ -298,6 +339,10 @@ const JunctionMarker = memo(function JunctionMarker({
     [color, selected, crossed, dim],
   );
   const handlers = useMemo(() => ({ click: () => onSelect(id) }), [id, onSelect]);
+  const lock = useMemo(
+    () => (selected ? lockIcon(name, zone, level, avg) : null),
+    [selected, name, zone, level, avg],
+  );
   const halo = useMemo(
     () => ({
       stroke: false,
@@ -333,6 +378,7 @@ const JunctionMarker = memo(function JunctionMarker({
           {zone}, {level.toLowerCase()}, avg {avg} vehicles
         </Tooltip>
       </CircleMarker>
+      {lock ? <Marker position={center} icon={lock} interactive={false} keyboard={false} /> : null}
     </>
   );
 });

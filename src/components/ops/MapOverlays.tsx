@@ -6,7 +6,7 @@ import type { OperatorOverride, PriorityRunStatus, RoadIncident } from "@/lib/si
 
 /** Canvas paths cannot read CSS variables, so these mirror the signal tokens as hex. */
 const AMBULANCE = "#fb4d6a";
-const WAVE = "#22d3ee";
+const WAVE = "#3ddc84";
 const GO = "#4ade80";
 const HOLD = "#fbbf24";
 

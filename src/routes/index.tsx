@@ -1,36 +1,31 @@
 import { createFileRoute, ClientOnly } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  lazy,
-  Suspense,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-} from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useReducedMotion } from "motion/react";
-import {
-  Activity,
-  Car,
-  ChevronDown,
-  Compass,
-  Gauge,
-  MapPin,
-  Navigation,
-  Radio,
-  ServerCrash,
-} from "lucide-react";
+import { Activity, Car, Gauge, MapPin, Radio, ServerCrash } from "lucide-react";
 
-import { DashboardHeader } from "@/components/traffic/DashboardHeader";
+import { useEngine } from "@/components/shell/engine";
+import { Crosshair } from "@/components/fx/global";
+import { MorphText } from "@/components/fx/text";
+import { BootSequence } from "@/components/argus/BootSequence";
+import { BranchedMenu, type Branch } from "@/components/argus/BranchedMenu";
+import { CommandLine, openPalette } from "@/components/argus/CommandLine";
+import { ControlLoop } from "@/components/argus/ControlLoop";
+import { CoreReadings } from "@/components/argus/CoreReadings";
+import { CursorField } from "@/components/argus/CursorField";
+import { DayHelix } from "@/components/argus/DayHelix";
+import { FolderFloat, type DossierFile } from "@/components/argus/FolderFloat";
+import { LiquidGlassDefs } from "@/components/argus/LiquidGlass";
+import { SplitFlap } from "@/components/argus/SplitFlap";
+import { useGlowBorders } from "@/components/argus/useGlowBorders";
 import { JunctionList } from "@/components/traffic/JunctionList";
 import { RoadList, type RoadControls } from "@/components/traffic/RoadList";
 import { CameraWall } from "@/components/traffic/CameraWall";
 import { ModelPanel } from "@/components/traffic/ModelPanel";
 import { ScenarioPanel } from "@/components/traffic/ScenarioPanel";
 import { Attention } from "@/components/ops/Attention";
+import { useForgeEffects } from "@/components/ops/useForgeEffects";
 import { DirectionsPanel } from "@/components/ops/DirectionsPanel";
 import { CityBoard, type BoardStat } from "@/components/ops/CityBoard";
 import { GreenWavePanel } from "@/components/ops/GreenWavePanel";
@@ -75,9 +70,11 @@ import {
 import {
   dayProfile,
   findPeaks,
+  istHourOf,
   forecastAsSummary,
   forecastNetwork,
   liveAsForecast,
+  minutesUntilIst,
   type ForecastOptions,
   type JunctionForecast,
 } from "@/lib/forecast";
@@ -116,13 +113,13 @@ const PanelFallback = () => <Skeleton className="h-56 w-full rounded-2xl" />;
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Smart Traffic Management | Adaptive signals for Chennai" },
+      { title: "Control room · SIGNAL OPS" },
       {
         name: "description",
         content:
           "A control-room map of 69 Chennai junctions: see where traffic is jammed now or at any hour ahead, plan a trip with junction delay counted, and watch a queue model set the green times. Traffic is simulated.",
       },
-      { property: "og:title", content: "Smart Traffic Management" },
+      { property: "og:title", content: "SIGNAL OPS · Chennai adaptive signal control" },
       {
         property: "og:description",
         content:
@@ -147,6 +144,7 @@ const NO_JUNCTIONS: JunctionSummary[] = [];
 const NO_INCIDENTS: ReadonlyMap<number, number> = new Map();
 
 type Tab = "explore" | "directions";
+type BranchId = "watch" | "route" | "rescue" | "scenario" | "forecast" | "network" | "index";
 
 function MapFallback() {
   return (
@@ -203,10 +201,16 @@ function BackendProblem({
 function Dashboard() {
   const queryClient = useQueryClient();
   const reduceMotion = useReducedMotion() ?? false;
-  const liveTick = useServerFn(runTrafficTick);
-  const liveAdvance = useServerFn(advanceSignals);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [tab, setTab] = useState<Tab>("explore");
+  const [branch, setBranch] = useState<BranchId>("watch");
+  // The share link and the tour still speak in the old two tabs.
+  const tab: Tab = branch === "route" ? "directions" : "explore";
+  const setTab = useCallback(
+    (next: Tab) =>
+      setBranch((b) => (next === "directions" ? "route" : b === "route" ? "watch" : b)),
+    [],
+  );
+  useGlowBorders();
   // The moment being looked at, as an absolute time, so it does not drift as the clock moves on.
   const [targetMs, setTargetMs] = useState<number | null>(null);
   const [clock, setClock] = useState(() => new Date());
@@ -214,11 +218,8 @@ function Dashboard() {
   const [to, setTo] = useState<Endpoint | null>(null);
   const [pick, setPick] = useState<"from" | "to" | null>(null);
   const [routeId, setRouteId] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [inviteDismissed, setInviteDismissed] = useState(false);
   const [showRoadSpeeds, setShowRoadSpeeds] = useState(true);
-  const running = useRef(false);
-  const advancing = useRef(false);
   const activity = useEngineActivity(isSimulated);
   const launcher = usePriorityRunLauncher();
 
@@ -375,53 +376,8 @@ function Dashboard() {
   // A forced scenario (rush hour, overnight) is a made-up day, so real speeds are shown but not used.
   const trafficDriving = getRealTraffic()?.fresh ?? true;
 
-  const recalculate = useCallback(async () => {
-    if (running.current) return;
-    running.current = true;
-    setBusy(true);
-    try {
-      if (isSimulated) simTick();
-      else if (BROWSER_DRIVES_LOOP) await liveTick({});
-      refreshAll();
-    } catch (error) {
-      console.error("Traffic tick failed", error);
-    } finally {
-      running.current = false;
-      setBusy(false);
-    }
-  }, [liveTick, refreshAll]);
-
-  // Simulated sensor + model loop: re-solves the network every 12 seconds.
-  useEffect(() => {
-    void recalculate();
-    const id = window.setInterval(() => void recalculate(), 12000);
-    return () => window.clearInterval(id);
-  }, [recalculate]);
-
-  // Real-time signal controller: ends and reassigns green phases every 2 seconds.
-  useEffect(() => {
-    const run = async () => {
-      if (advancing.current) return;
-      advancing.current = true;
-      try {
-        const result = isSimulated
-          ? simAdvance()
-          : BROWSER_DRIVES_LOOP
-            ? ((await liveAdvance({})) as { switched?: number } | undefined)
-            : undefined;
-        if (result?.switched) {
-          void queryClient.invalidateQueries({ queryKey: ["roads"] });
-        }
-      } catch (error) {
-        console.error("Signal controller failed", error);
-      } finally {
-        advancing.current = false;
-      }
-    };
-    void run();
-    const id = window.setInterval(() => void run(), 2000);
-    return () => window.clearInterval(id);
-  }, [liveAdvance, queryClient]);
+  // The 12 s model loop and 2 s signal controller live in the app shell (EngineProvider).
+  const { busy, recalculate } = useEngine();
 
   const lastUpdated = useMemo(() => {
     const stamps = (junctionsQuery.data ?? [])
@@ -643,6 +599,7 @@ function Dashboard() {
   const networkVehicles = junctions.reduce((sum, j) => sum + j.total_vehicle_count, 0);
   const jammed = junctions.filter((j) => j.congestion_level === "HIGH").length;
   const perf = performanceQuery.data;
+  useForgeEffects(junctions.length ? jammed : null);
 
   // Signed: negative means the adaptive plan is predicted to wait longer than the fixed timer.
   const waitChange = (() => {
@@ -720,18 +677,6 @@ function Dashboard() {
       },
     };
   }, [isLive, activeId, activity.overrides, activity.incidents, queryClient, refreshAll]);
-
-  const tabs: Array<{ id: Tab; label: string; icon: typeof Compass }> = [
-    { id: "explore", label: "Explore", icon: Compass },
-    { id: "directions", label: "Directions", icon: Navigation },
-  ];
-  const onTabKey = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
-    event.preventDefault();
-    const next: Tab = tab === "explore" ? "directions" : "explore";
-    setTab(next);
-    document.getElementById(`tab-${next}`)?.focus();
-  };
 
   const peaks = useMemo(() => findPeaks(base), [base]);
   const paletteActions: PaletteAction[] = [
@@ -839,19 +784,285 @@ function Dashboard() {
   const backendDown = !isSimulated && junctionsQuery.isError && !junctionsQuery.data;
   const emptyDb = !isSimulated && junctionsQuery.isSuccess && junctionsQuery.data.length === 0;
 
+  // ---- what the eye reads: load, jams, and when fresh readings land
+  const all = [...forecast.values()];
+  const avgLoad = all.length ? all.reduce((sum, f) => sum + f.saturation, 0) / all.length : 0;
+  const busyCount = junctions.filter((j) => j.congestion_level === "MODERATE").length;
+  const heat = junctions.length ? jammed / junctions.length : 0;
+  const eyeState = {
+    aperture: Math.max(0.08, Math.min(1, 1.2 - avgLoad)),
+    heat,
+    pulseKey: lastUpdated,
+  };
+  const systemState = tour.active
+    ? "TOUR"
+    : activity.run && !activity.run.finished
+      ? "PRIORITY RUN"
+      : busy
+        ? "SOLVING"
+        : isForecast
+          ? "FORECAST"
+          : jammed > 0
+            ? "WATCHING"
+            : "STANDING BY";
+  const readings = [
+    {
+      label: "Jammed",
+      value: String(jammed).padStart(2, "0"),
+      share: junctions.length ? jammed / junctions.length / 0.3 : 0,
+      hot: jammed > 0,
+    },
+    {
+      label: "Busy",
+      value: String(busyCount).padStart(2, "0"),
+      share: junctions.length ? busyCount / junctions.length : 0,
+    },
+    {
+      label: "Load",
+      value: `${Math.round(avgLoad * 100)}%`,
+      share: avgLoad,
+      note: "Average degree of saturation across all junctions",
+    },
+    {
+      label: "Queued",
+      value: networkVehicles.toLocaleString("en-IN"),
+      share: networkVehicles / Math.max(1, junctions.length * 60),
+      note: "Vehicles waiting at signals, modelled",
+    },
+    {
+      label: "Wait cut",
+      value: `${waitChange.percent}%`,
+      share: Math.max(0, waitChange.percent) / 50,
+      note:
+        waitChange.worse > 0
+          ? `Adaptive predicted worse at ${waitChange.worse} of ${waitChange.total} junctions`
+          : "Adaptive predicted no worse than the fixed timer anywhere",
+    },
+  ];
+
+  const branches: Branch<BranchId>[] = [
+    { id: "watch", label: "Watchlist", reading: String(jammed), hot: jammed > 0 },
+    { id: "route", label: "Route", reading: from && to ? "set" : undefined },
+    ...(isSimulated
+      ? [
+          {
+            id: "rescue" as const,
+            label: "Priority run",
+            reading: activity.run
+              ? `${activity.run.passed}/${activity.run.stops.length}`
+              : undefined,
+            hot: Boolean(activity.run && !activity.run.finished),
+          },
+          { id: "scenario" as const, label: "Scenario" },
+        ]
+      : []),
+    {
+      id: "forecast",
+      label: "Day spiral",
+      reading: isForecast ? `${String(at.getHours()).padStart(2, "0")}h` : "now",
+    },
+    { id: "network", label: "Network detail" },
+    { id: "index", label: "All junctions", reading: String(junctions.length) },
+  ];
+
+  const files: DossierFile[] = [
+    {
+      id: "plan",
+      label: "Signal plan",
+      tag: roads.length ? `${roads.length} approaches` : undefined,
+      render: () => (
+        <div>
+          <div className="relative h-[220px] border-b border-white/10">
+            <ClientOnly fallback={<Skeleton className="h-full w-full rounded-none" />}>
+              <Suspense fallback={<Skeleton className="h-full w-full rounded-none" />}>
+                {roads.length > 0 ? (
+                  <JunctionHologram roads={roads} reducedMotion={reduceMotion} />
+                ) : (
+                  <Skeleton className="h-full w-full rounded-none" />
+                )}
+              </Suspense>
+            </ClientOnly>
+            <p className="meta-label pointer-events-none absolute left-3 top-2">
+              Projection: lit blocks moving, dim blocks held
+            </p>
+          </div>
+          <div className="p-3">
+            <p className="mb-3 text-xs text-muted-foreground">
+              Green time is solved with Webster&apos;s method from each approach&apos;s arrival rate
+              and saturation flow. Vehicle readings are simulated; the plan is a real calculation on
+              them.
+            </p>
+            <RoadList
+              roads={roads}
+              loading={roadsQuery.isLoading && isLive}
+              {...(roadControls && !isForecast ? { controls: roadControls } : {})}
+            />
+          </div>
+        </div>
+      ),
+    },
+    ...(selected && isLive
+      ? [
+          {
+            id: "replay",
+            label: "Replay",
+            tag: "fixed vs adaptive",
+            render: () => (
+              <Suspense fallback={<PanelFallback />}>
+                <ReplayPanel
+                  junctionId={selected.junction_id}
+                  startMs={at.getTime()}
+                  factor={forecastOptions.factor}
+                  capacityScale={forecastOptions.capacityScale}
+                  blocked={forecastOptions.incidents?.has(selected.junction_id) ?? false}
+                />
+              </Suspense>
+            ),
+          },
+        ]
+      : []),
+    {
+      id: "model",
+      label: "Model",
+      tag: cardForecast ? `cycle ${Math.round(cardForecast.cycle)} s` : undefined,
+      render: () => (
+        <ModelPanel
+          approaches={modelQuery.data ?? []}
+          performance={performanceQuery.data}
+          loading={modelQuery.isLoading && isLive}
+        />
+      ),
+    },
+    {
+      id: "cycles",
+      label: "Cycles",
+      render: () => (
+        <Suspense fallback={<PanelFallback />}>
+          <CycleChart
+            data={cyclesQuery.data ?? []}
+            saving={savedQuery.data}
+            loading={cyclesQuery.isLoading && isLive}
+          />
+        </Suspense>
+      ),
+    },
+    {
+      id: "cameras",
+      label: "Cameras",
+      tag: "simulated",
+      render: () => (
+        <CameraWall
+          cameras={camerasQuery.data ?? []}
+          roads={roads}
+          loading={camerasQuery.isLoading && isLive}
+        />
+      ),
+    },
+    {
+      id: "cctv",
+      label: "Counts",
+      render: () => (
+        <Suspense fallback={<PanelFallback />}>
+          <CctvPanel data={cctvQuery.data ?? []} loading={cctvQuery.isLoading && isLive} />
+        </Suspense>
+      ),
+    },
+  ];
+
+  const branchPanel = (() => {
+    switch (branch) {
+      case "route":
+        return (
+          <>
+            <DirectionsPanel
+              junctions={junctions}
+              from={from}
+              to={to}
+              onFrom={setFrom}
+              onTo={setTo}
+              pick={pick}
+              onPickMode={setPick}
+              assessments={directions.assessments}
+              routeIndex={routeIndex}
+              onRouteIndex={chooseRoute}
+              loading={directions.loading}
+              error={directions.error}
+              errorKind={directions.errorKind}
+              departAt={at}
+              departNow={!isForecast}
+              levelOf={levelOf}
+              liveEta={liveEta}
+            />
+            {isSimulated && !isForecast ? (
+              <GreenWavePanel
+                route={directions.assessments[routeIndex]}
+                run={activity.run}
+                launcher={launcher}
+              />
+            ) : null}
+          </>
+        );
+      case "rescue":
+        return <PriorityRunPanel junction={selected} run={activity.run} launcher={launcher} />;
+      case "scenario":
+        return (
+          <ScenarioPanel
+            junctionId={isLive ? activeId : null}
+            junctionName={selected?.name ?? ""}
+            onChange={refreshAll}
+            weather={weather}
+          />
+        );
+      case "forecast":
+        return (
+          <DayHelix
+            base={base}
+            options={forecastOptions}
+            onPick={setOffset}
+            currentHour={istHourOf(at)}
+          />
+        );
+      case "network":
+        return (
+          <CityBoard
+            stats={stats}
+            loading={junctionsQuery.isLoading}
+            saved={savedQuery.data}
+            adaptiveDelay={perf ? Math.round(perf.networkDelayAdaptive) : undefined}
+            fixedDelay={perf ? Math.round(perf.networkDelayFixed) : undefined}
+            {...(isSimulated ? { activity, weather, liveTraffic, trafficDriving } : {})}
+          />
+        );
+      case "index":
+        return (
+          <div className="h-[460px]">
+            <JunctionList
+              junctions={junctions}
+              selectedId={activeId}
+              onSelect={select}
+              loading={junctionsQuery.isLoading}
+            />
+          </div>
+        );
+      default:
+        return (
+          <Attention
+            junctions={junctions}
+            forecast={forecast}
+            selectedId={activeId}
+            onSelect={select}
+          />
+        );
+    }
+  })();
+
   return (
-    <div className="flex min-h-screen flex-col lg:h-screen">
-      <DashboardHeader
-        lastUpdated={lastUpdated}
-        onRecalculate={() => void recalculate()}
-        busy={busy}
-        mode={DATA_MODE}
-        {...(isSimulated ? { onStartTour: () => void tour.start(), tourPlaying: tour.active } : {})}
-        onShare={shareView}
-        shareLabel={shareLabel}
-        onExport={exportCsv}
-        liveTraffic={liveTraffic}
-        trafficDriving={trafficDriving}
+    <div className="deck argus ops-deck relative flex min-h-[calc(100vh-82px)] flex-col lg:block lg:h-[calc(100vh-82px)] lg:overflow-hidden">
+      <LiquidGlassDefs />
+      <BootSequence
+        junctions={liveJunctions.length || SEED_JUNCTIONS.length}
+        source={isSimulated ? "SIMULATED DEMAND" : "SUPABASE LIVE"}
+        ready={liveJunctions.length > 0}
       />
       <CommandPalette
         junctions={junctions}
@@ -873,9 +1084,9 @@ function Dashboard() {
           onRetry={() => void junctionsQuery.refetch()}
         />
       ) : (
-        <main className="grid flex-1 gap-3 p-3 md:p-4 lg:min-h-0 lg:grid-cols-[260px_minmax(0,1fr)_300px] lg:grid-rows-1 lg:overflow-hidden xl:grid-cols-[320px_minmax(0,1fr)_380px] 2xl:grid-cols-[350px_minmax(0,1fr)_430px]">
-          {/* Centre: the map. First in reading order so the search box and map controls come first. */}
-          <div className="panel hud-frame @container relative isolate h-[520px] overflow-hidden lg:col-start-2 lg:row-start-1 lg:h-full">
+        <main className="stage relative flex flex-1 flex-col gap-3 p-3 lg:absolute lg:inset-0 lg:block lg:p-0">
+          {/* Centre: the map is the table. */}
+          <div className="holo-table @container relative isolate h-[70vh] overflow-hidden rounded-lg border border-white/10 lg:absolute lg:inset-0 lg:h-auto lg:rounded-none lg:border-0">
             <div className="absolute inset-0 z-0">
               <ClientOnly fallback={<MapFallback />}>
                 <Suspense fallback={<MapFallback />}>
@@ -904,50 +1115,77 @@ function Dashboard() {
             </div>
 
             <div className="map-vignette absolute inset-0 z-[5]" aria-hidden />
-            <div className="map-scan absolute inset-0 z-[4]" aria-hidden />
+            <div
+              key={lastUpdated ?? "first"}
+              className="map-scan absolute inset-0 z-[6]"
+              aria-hidden
+            />
+            <CursorField />
+            <Crosshair />
+            <div aria-hidden className="ops-map-frame">
+              <i className="tl" />
+              <i className="tr" />
+              <i className="bl" />
+              <i className="br" />
+            </div>
+            <div className="ops-maptools pointer-events-auto absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-1.5">
+              <span className="ops-maptag" title={systemState}>
+                <MorphText text={`${jammed} JAMMED · ${Math.round(avgLoad * 100)}% LOAD`} />
+              </span>
+              <button
+                type="button"
+                className="ops-btn"
+                onClick={openPalette}
+                title="Command palette (Ctrl+K)"
+              >
+                Ctrl K
+              </button>
+              <button type="button" className="ops-btn" onClick={shareView}>
+                {shareLabel}
+              </button>
+              <button type="button" className="ops-btn" onClick={exportCsv}>
+                CSV
+              </button>
+              {isSimulated ? (
+                <button type="button" className="ops-btn" onClick={() => void tour.start()}>
+                  {tour.active ? "Touring" : "Tour"}
+                </button>
+              ) : null}
+              {lastUpdated ? (
+                <span className="ops-maptag hide-sm">
+                  {trafficDriving ? "" : "SCENARIO · "}READ{" "}
+                  {new Date(lastUpdated).toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata" })}
+                </span>
+              ) : null}
+            </div>
             <p className="sr-only" role="status" aria-live="polite">
               {selected
                 ? `Selected ${selected.name}, ${selected.congestion_level.toLowerCase()}`
                 : ""}
             </p>
 
-            <div className="hud pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-wrap items-start justify-between gap-3 p-3">
-              <div className="pointer-events-auto w-full max-w-[340px]">
-                <SearchBox
-                  junctions={junctions}
-                  label="Search junctions"
-                  placeholder="Search a junction or zone"
-                  onPick={(j) => {
-                    setSelectedId(j.junction_id);
-                    setPick(null);
-                  }}
-                />
-              </div>
-              <ul className="pointer-events-auto flex flex-wrap items-center gap-2 text-xs text-foreground/90">
-                {trafficIsLive && !isForecast ? (
-                  <li>
-                    <button
-                      type="button"
-                      aria-pressed={showRoadSpeeds}
-                      onClick={() => setShowRoadSpeeds((on) => !on)}
-                      title="Colour the roads by how fast real traffic is moving (TomTom)"
-                      className={`glass-chip transition-data flex min-h-8 items-center gap-1.5 px-3 py-1.5 ${
-                        showRoadSpeeds ? "text-primary" : "text-muted-foreground"
-                      }`}
-                    >
-                      <Radio className="h-3 w-3" aria-hidden />
-                      Road speeds
-                    </button>
-                  </li>
-                ) : null}
-                {LEGEND.map((item) => (
-                  <li key={item.label} className="glass-chip flex items-center gap-1.5 px-3 py-1.5">
-                    <span className={`h-2 w-2 rounded-full ${item.cls}`} />
-                    {item.label}
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <ul className="hud pointer-events-auto absolute right-3 top-3 z-10 flex flex-col items-end gap-1.5 text-[0.7rem] text-foreground/90 lg:right-[calc(var(--deck-r)+0.75rem)] lg:top-[64px]">
+              {LEGEND.map((item) => (
+                <li key={item.label} className="legend-chip">
+                  {item.label}
+                  <span className={`h-1.5 w-1.5 rounded-full ${item.cls}`} />
+                </li>
+              ))}
+              {trafficIsLive && !isForecast ? (
+                <li>
+                  <button
+                    type="button"
+                    aria-pressed={showRoadSpeeds}
+                    onClick={() => setShowRoadSpeeds((on) => !on)}
+                    title="Colour the roads by how fast real traffic is moving (TomTom)"
+                    className={`legend-chip ${showRoadSpeeds ? "text-foreground" : "text-muted-foreground"}`}
+                  >
+                    Road speeds
+                    <Radio className="h-3 w-3" aria-hidden />
+                  </button>
+                </li>
+              ) : null}
+            </ul>
 
             {tour.caption ? (
               <TourCaption caption={tour.caption} onStop={tour.stop} />
@@ -963,145 +1201,73 @@ function Dashboard() {
             {pick ? (
               <p
                 role="status"
-                className="glass-chip pointer-events-none absolute left-1/2 top-[76px] z-10 -translate-x-1/2 px-4 py-1.5 text-xs text-primary"
+                className="legend-chip pointer-events-none absolute left-1/2 top-[200px] z-10 -translate-x-1/2 px-4 py-1.5 text-xs"
               >
                 Click a junction or anywhere on the map to set the{" "}
                 {pick === "from" ? "start" : "destination"}
               </p>
             ) : null}
 
-            <div className="hud pointer-events-none absolute inset-x-0 bottom-0 z-10 p-3">
+            <div className="hud pointer-events-none absolute inset-x-0 bottom-0 z-10 space-y-2 p-3 lg:left-[var(--deck-l)] lg:right-[var(--deck-r)]">
+              <div className="pointer-events-auto mx-auto hidden max-w-[560px] md:block">
+                <CommandLine
+                  context={(selected?.name ?? "chennai").toLowerCase().replace(/\s+/g, "-")}
+                />
+              </div>
               <TimeBar now={base} clock={clock} offsetMin={offsetMin} onChange={setOffset} />
             </div>
           </div>
 
-          {/* Left: what to do */}
-          <div className="scroll-glass space-y-3 lg:col-start-1 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
+          {/* Left rail: the network, the loop, and the branches. */}
+          <div className="slide-left deck-col deck-left rail space-y-5">
+            <SearchBox
+              junctions={junctions}
+              label="Search junctions"
+              placeholder="Find a junction or zone"
+              onPick={(j) => {
+                setSelectedId(j.junction_id);
+                setPick(null);
+              }}
+            />
+            <CoreReadings readings={readings} />
+            <ControlLoop busy={busy} lastUpdated={lastUpdated} />
+            <section aria-label="Tools">
+              <h2 className="rail-head">Branches</h2>
+              <BranchedMenu
+                branches={branches}
+                value={branch}
+                onChange={setBranch}
+                label="What to work on"
+              />
+            </section>
             <div
-              role="tablist"
-              aria-label="Mode"
-              onKeyDown={onTabKey}
-              className="glass-chip flex gap-1 p-1"
+              key={branch}
+              role="tabpanel"
+              id={`panel-${branch}`}
+              aria-labelledby={`branch-${branch}`}
+              className="branch-panel view-swap space-y-3"
             >
-              {tabs.map(({ id, label, icon: Icon }) => (
-                <button
-                  key={id}
-                  id={`tab-${id}`}
-                  type="button"
-                  role="tab"
-                  aria-selected={tab === id}
-                  aria-controls={`panel-${id}`}
-                  tabIndex={tab === id ? 0 : -1}
-                  onClick={() => setTab(id)}
-                  className={`transition-data flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium ${
-                    tab === id
-                      ? "bg-primary/20 text-primary shadow-[0_0_0_1px_oklch(0.82_0.13_205/0.4)]"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <Icon className="h-3.5 w-3.5" aria-hidden />
-                  {label}
-                </button>
-              ))}
+              {branchPanel}
             </div>
-
-            {tab === "explore" ? (
-              <div
-                role="tabpanel"
-                id="panel-explore"
-                aria-labelledby="tab-explore"
-                className="space-y-3"
-              >
-                <CityBoard
-                  stats={stats}
-                  loading={junctionsQuery.isLoading}
-                  saved={savedQuery.data}
-                  adaptiveDelay={perf ? Math.round(perf.networkDelayAdaptive) : undefined}
-                  fixedDelay={perf ? Math.round(perf.networkDelayFixed) : undefined}
-                  {...(isSimulated ? { activity, weather, liveTraffic, trafficDriving } : {})}
-                />
-
-                <Attention
-                  junctions={junctions}
-                  forecast={forecast}
-                  selectedId={activeId}
-                  onSelect={select}
-                />
-
-                {isSimulated ? (
-                  <>
-                    <PriorityRunPanel junction={selected} run={activity.run} launcher={launcher} />
-                    <ScenarioPanel
-                      junctionId={isLive ? activeId : null}
-                      junctionName={selected?.name ?? ""}
-                      onChange={refreshAll}
-                      weather={weather}
-                    />
-                  </>
-                ) : null}
-
-                <details className="glass-inset group">
-                  <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-sm font-medium">
-                    All {junctions.length} junctions
-                    <ChevronDown
-                      className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180"
-                      aria-hidden
-                    />
-                  </summary>
-                  <div className="h-[420px] p-2">
-                    <JunctionList
-                      junctions={junctions}
-                      selectedId={activeId}
-                      onSelect={select}
-                      loading={junctionsQuery.isLoading}
-                    />
-                  </div>
-                </details>
-              </div>
-            ) : (
-              <div
-                role="tabpanel"
-                id="panel-directions"
-                aria-labelledby="tab-directions"
-                className="space-y-3"
-              >
-                <DirectionsPanel
-                  junctions={junctions}
-                  from={from}
-                  to={to}
-                  onFrom={setFrom}
-                  onTo={setTo}
-                  pick={pick}
-                  onPickMode={setPick}
-                  assessments={directions.assessments}
-                  routeIndex={routeIndex}
-                  onRouteIndex={chooseRoute}
-                  loading={directions.loading}
-                  error={directions.error}
-                  errorKind={directions.errorKind}
-                  departAt={at}
-                  departNow={!isForecast}
-                  levelOf={levelOf}
-                  liveEta={liveEta}
-                />
-                {isSimulated && !isForecast ? (
-                  <GreenWavePanel
-                    route={directions.assessments[routeIndex]}
-                    run={activity.run}
-                    launcher={launcher}
-                  />
-                ) : null}
-              </div>
-            )}
           </div>
 
-          {/* Right: the detail */}
-          <div className="scroll-glass space-y-3 lg:col-start-3 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
+          {/* Right: the dossier on the junction being watched. */}
+          <div className="slide-right deck-col deck-right space-y-3">
+            {selected ? (
+              <header className="dossier-head">
+                <p className="rail-head">
+                  Target · {selected.zone}
+                  {isForecast ? " · forecast" : " · live"}
+                </p>
+                <SplitFlap text={selected.name} pad={20} className="flap-lg" />
+              </header>
+            ) : null}
             {selected && cardForecast ? (
               <PlaceCard
                 junction={selected}
                 forecast={cardForecast}
                 profile={profile}
+                onPickHour={(h) => setOffset(minutesUntilIst(base, h, 5))}
                 at={at}
                 isForecast={isForecast}
                 fromLiveModel={liveCard !== undefined}
@@ -1122,80 +1288,17 @@ function Dashboard() {
                 }
               />
             ) : (
-              <Skeleton className="h-64 w-full rounded-2xl" />
+              <Skeleton className="h-64 w-full rounded-lg" />
             )}
 
             {isForecast ? (
               <p role="status" className="glass-inset px-3 py-2 text-xs text-muted-foreground">
-                The panels below show the present moment, not the forecast. Return the time bar to
+                The files below show the present moment, not the forecast. Return the time bar to
                 Now to match them to the card above.
               </p>
             ) : null}
 
-            {selected && isLive ? (
-              <Suspense fallback={<PanelFallback />}>
-                <ReplayPanel
-                  junctionId={selected.junction_id}
-                  startMs={at.getTime()}
-                  factor={forecastOptions.factor}
-                  capacityScale={forecastOptions.capacityScale}
-                  blocked={forecastOptions.incidents?.has(selected.junction_id) ?? false}
-                />
-              </Suspense>
-            ) : null}
-
-            <section className="panel overflow-hidden">
-              <div className="relative h-[230px] border-b border-border">
-                <ClientOnly fallback={<Skeleton className="h-full w-full rounded-none" />}>
-                  <Suspense fallback={<Skeleton className="h-full w-full rounded-none" />}>
-                    {roads.length > 0 ? (
-                      <JunctionHologram roads={roads} reducedMotion={reduceMotion} />
-                    ) : (
-                      <Skeleton className="h-full w-full rounded-none" />
-                    )}
-                  </Suspense>
-                </ClientOnly>
-                <p className="pointer-events-none absolute left-4 top-3 text-xs text-muted-foreground">
-                  Now: each block is a queued vehicle, the glowing head has the green.
-                </p>
-              </div>
-              <div className="p-4">
-                <h2 className="text-lg font-semibold">Approaches and live signal plan</h2>
-                <p className="mb-4 text-xs text-muted-foreground">
-                  Green time comes from the model: cycle length and splits are solved with
-                  Webster&apos;s method from each approach&apos;s estimated arrival rate and
-                  saturation flow. Vehicle readings come from a demand simulator, since Chennai has
-                  no public sensor feed, so the plans and predictions are real calculations on
-                  simulated traffic.
-                </p>
-                <RoadList
-                  roads={roads}
-                  loading={roadsQuery.isLoading && isLive}
-                  {...(roadControls && !isForecast ? { controls: roadControls } : {})}
-                />
-              </div>
-            </section>
-
-            <ModelPanel
-              approaches={modelQuery.data ?? []}
-              performance={performanceQuery.data}
-              loading={modelQuery.isLoading && isLive}
-            />
-            <Suspense fallback={<PanelFallback />}>
-              <CycleChart
-                data={cyclesQuery.data ?? []}
-                saving={savedQuery.data}
-                loading={cyclesQuery.isLoading && isLive}
-              />
-            </Suspense>
-            <CameraWall
-              cameras={camerasQuery.data ?? []}
-              roads={roads}
-              loading={camerasQuery.isLoading && isLive}
-            />
-            <Suspense fallback={<PanelFallback />}>
-              <CctvPanel data={cctvQuery.data ?? []} loading={cctvQuery.isLoading && isLive} />
-            </Suspense>
+            <FolderFloat title={selected ? `${selected.name} files` : "Files"} files={files} />
           </div>
         </main>
       )}

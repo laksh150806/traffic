@@ -1,6 +1,7 @@
 @import "tailwindcss" source(none);
 @source "../src";
 @import "tw-animate-css";
+@import "./fx.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -17,8 +18,9 @@
   --radius-xl: calc(var(--radius) + 4px);
   --radius-2xl: calc(var(--radius) + 8px);
 
-  --font-display: "Sora", "Segoe UI", sans-serif;
-  --font-sans: "Manrope", "Segoe UI", sans-serif;
+  --font-display: "Chakra Petch", "Segoe UI", sans-serif;
+  --font-brand: "Chakra Petch", "Segoe UI", sans-serif;
+  --font-sans: "Inter Tight", "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
   --color-background: var(--background);
@@ -55,36 +57,42 @@
   --shadow-panel:
     0 1px 0 0 oklch(1 0 0 / 26%) inset, 0 -1px 0 0 oklch(1 0 0 / 5%) inset,
     0 1px 0 0 oklch(1 0 0 / 4%), 0 34px 70px -34px oklch(0.04 0.06 285 / 95%);
-  --shadow-glow: 0 0 0 1px oklch(0.82 0.13 205 / 40%), 0 0 32px -6px oklch(0.82 0.13 205 / 50%);
+  --shadow-glow: 0 0 0 1px oklch(0.95 0.004 260 / 40%), 0 0 32px -6px oklch(0.95 0.004 260 / 30%);
 }
 
 :root {
-  --radius: 1rem;
-  --background: oklch(0.13 0.03 275);
-  --foreground: oklch(0.96 0.01 270);
-  --card: oklch(0.24 0.06 280 / 0.42);
-  --card-foreground: oklch(0.96 0.01 270);
-  --surface: oklch(0.3 0.05 275 / 0.35);
-  --popover: oklch(0.19 0.04 275 / 0.92);
-  --popover-foreground: oklch(0.96 0.01 270);
-  --primary: oklch(0.82 0.13 205);
-  --primary-foreground: oklch(0.15 0.04 250);
-  --secondary: oklch(0.28 0.05 275);
-  --secondary-foreground: oklch(0.93 0.01 270);
-  --nebula: oklch(0.68 0.19 295);
-  --muted: oklch(0.3 0.04 275 / 0.6);
-  --muted-foreground: oklch(0.8 0.03 268);
-  --accent: oklch(0.32 0.06 280 / 0.6);
-  --accent-foreground: oklch(0.96 0.01 270);
-  --destructive: oklch(0.68 0.22 22);
-  --destructive-foreground: oklch(0.985 0.002 285);
-  --border: oklch(1 0 0 / 0.1);
-  --input: oklch(1 0 0 / 0.14);
-  --ring: oklch(0.82 0.13 205);
-  --signal-low: oklch(0.8 0.2 150);
-  --signal-moderate: oklch(0.83 0.16 80);
-  --signal-high: oklch(0.74 0.19 22);
-  --baseline: oklch(0.62 0.05 270);
+  /* SIGNAL OPS: ink black, one amber, red = jam, green = flowing. See DESIGN.md. */
+  --radius: 0.25rem;
+  --background: #0a0b0c;
+  --foreground: #e6e9ec;
+  --card: rgba(24, 27, 30, 0.82);
+  --card-foreground: #e6e9ec;
+  --surface: rgba(255, 45, 120, 0.05);
+  --popover: rgba(17, 19, 21, 0.97);
+  --popover-foreground: #e6e9ec;
+  --primary: #ff2d78;
+  --primary-foreground: #0a0b0c;
+  --secondary: #181b1e;
+  --secondary-foreground: #e6e9ec;
+  --nebula: #ff4d3d;
+  --muted: rgba(255, 255, 255, 0.05);
+  --muted-foreground: #8f979e;
+  --accent: rgba(255, 45, 120, 0.1);
+  --accent-foreground: #ff2d78;
+  --destructive: #ff4d3d;
+  --destructive-foreground: #ffffff;
+  --border: rgba(255, 45, 120, 0.14);
+  --input: rgba(255, 45, 120, 0.2);
+  --ring: #ff2d78;
+  --signal-low: #3ddc84;
+  --signal-moderate: #ff8a2a;
+  --signal-high: #ff4d3d;
+  --baseline: #838b92;
+  --stark-gold: #ff2d78;
+  --stark-red: #ff4d3d;
+  --holo-a: #ff7aa8;
+  --holo-b: #ff4d3d;
+  --holo-c: #8f979e;
 }
 
 @layer base {
@@ -119,11 +127,9 @@
     z-index: -1;
     pointer-events: none;
     background:
-      radial-gradient(46rem 34rem at 88% -6%, oklch(0.5 0.22 305 / 0.55), transparent 64%),
-      radial-gradient(44rem 34rem at -4% 22%, oklch(0.52 0.15 215 / 0.5), transparent 62%),
-      radial-gradient(40rem 30rem at 52% 108%, oklch(0.46 0.2 275 / 0.6), transparent 62%),
-      radial-gradient(26rem 20rem at 70% 62%, oklch(0.55 0.2 340 / 0.22), transparent 66%),
-      radial-gradient(oklch(1 0 0 / 0.05) 1px, transparent 1px) 0 0 / 28px 28px;
+      radial-gradient(60rem 40rem at 85% -10%, rgba(255, 45, 120, 0.08), transparent 60%),
+      radial-gradient(50rem 30rem at -10% 110%, rgba(255, 77, 61, 0.06), transparent 60%),
+      radial-gradient(rgba(255, 45, 120, 0.07) 1px, transparent 1px) 0 0 / 28px 28px;
   }
 
   h1,
@@ -155,7 +161,7 @@
   background-color: var(--color-card);
   background-image:
     linear-gradient(155deg, oklch(1 0 0 / 0.16), oklch(1 0 0 / 0.02) 34%, transparent 60%),
-    linear-gradient(0deg, oklch(0.5 0.15 280 / 0.1), transparent 40%);
+    linear-gradient(0deg, oklch(1 0 0 / 0.03), transparent 40%);
   -webkit-backdrop-filter: blur(20px) saturate(1.5);
   backdrop-filter: blur(20px) saturate(1.5);
   box-shadow: var(--shadow-panel);
@@ -274,12 +280,12 @@
 /* Leaflet street map, tinted to sit inside the same night sky. */
 /* The map's own stylesheet loads later, with the same weight, so this needs the extra element. */
 div.leaflet-container {
-  background: oklch(0.12 0.03 275);
+  background: oklch(0.075 0.006 250);
   font-family: var(--font-sans);
 }
 
 .leaflet-tile-pane {
-  filter: invert(1) hue-rotate(205deg) brightness(0.85) contrast(0.95) saturate(0.7);
+  filter: invert(1) grayscale(1) brightness(0.72) contrast(1.05);
 }
 
 .leaflet-control-zoom a,
@@ -358,8 +364,8 @@ div.leaflet-container {
 }
 
 .run-wave::before {
-  border: 3px solid #22d3ee;
-  box-shadow: 0 0 14px 2px #22d3ee;
+  border: 3px solid #3ddc84;
+  box-shadow: 0 0 14px 2px #3ddc84;
 }
 
 .run-ambulance span {
@@ -368,7 +374,7 @@ div.leaflet-container {
 }
 
 .run-wave span {
-  background: #22d3ee;
+  background: #3ddc84;
   box-shadow: 0 0 0 3px #fff;
 }
 
@@ -393,7 +399,7 @@ div.leaflet-container {
 }
 
 .incident-works span {
-  background: #f59e0b;
+  background: #ff2d78;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -408,9 +414,11 @@ div.leaflet-container {
 .map-vignette {
   pointer-events: none;
   background:
-    radial-gradient(ellipse at 50% 45%, transparent 55%, oklch(0.1 0.04 275 / 0.55) 100%),
-    linear-gradient(180deg, oklch(0.1 0.04 275 / 0.55), transparent 22%),
-    linear-gradient(0deg, oklch(0.1 0.04 275 / 0.6), transparent 26%);
+    radial-gradient(ellipse at 50% 48%, transparent 50%, oklch(0.06 0.004 260 / 0.7) 100%),
+    linear-gradient(180deg, oklch(0.06 0.004 260 / 0.85), transparent 18%),
+    linear-gradient(0deg, oklch(0.06 0.004 260 / 0.75), transparent 22%),
+    repeating-linear-gradient(0deg, oklch(1 0 0 / 0.028) 0 1px, transparent 1px 72px),
+    repeating-linear-gradient(90deg, oklch(1 0 0 / 0.028) 0 1px, transparent 1px 72px);
 }
 
 /* Thin scrollbars that match the glass. */
@@ -420,7 +428,7 @@ div.leaflet-container {
 }
 
 /* ------------------------------------------------------------------------------------------
- * Control-room finish: corner brackets, a radar sweep, a drifting aurora and glowing readouts.
+ * Control-room finish: corner brackets, a drifting aurora and glowing readouts.
  * All of it is static or animates transform/opacity only, so it costs the compositor, not paint.
  * ---------------------------------------------------------------------------------------- */
 
@@ -431,7 +439,7 @@ div.leaflet-container {
   inset: 6px;
   pointer-events: none;
   border-radius: calc(var(--radius-lg) - 6px);
-  --tick: color-mix(in oklab, var(--primary) 75%, transparent);
+  --tick: color-mix(in oklab, var(--stark-gold) 80%, transparent);
   background:
     linear-gradient(var(--tick), var(--tick)) top left / 14px 1.5px no-repeat,
     linear-gradient(var(--tick), var(--tick)) top left / 1.5px 14px no-repeat,
@@ -443,36 +451,6 @@ div.leaflet-container {
     linear-gradient(var(--tick), var(--tick)) bottom right / 1.5px 14px no-repeat;
   opacity: 0.55;
   z-index: 8;
-}
-
-/* A faint radar sweep over the map. The map stays fully clickable underneath. */
-.map-scan {
-  pointer-events: none;
-  overflow: hidden;
-}
-
-.map-scan::before {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 190%;
-  aspect-ratio: 1;
-  margin: -95% 0 0 -95%;
-  background: conic-gradient(
-    from 0deg,
-    transparent 0deg 318deg,
-    color-mix(in oklab, var(--primary) 6%, transparent) 350deg,
-    color-mix(in oklab, var(--primary) 16%, transparent) 360deg
-  );
-  animation: radar-sweep 14s linear infinite;
-  will-change: transform;
-}
-
-@keyframes radar-sweep {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 /* A thin light that travels along the top edge of the header: the system is live. */
@@ -507,12 +485,7 @@ div.leaflet-container {
 
 /* The title in light that shifts from cyan to violet. */
 .text-gradient {
-  background: linear-gradient(
-    95deg,
-    oklch(0.93 0.07 205),
-    oklch(0.82 0.16 215) 45%,
-    oklch(0.76 0.2 295)
-  );
+  background: linear-gradient(95deg, oklch(1 0 0), oklch(0.9 0.004 260) 50%, oklch(0.68 0.006 260));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -532,7 +505,6 @@ body::before {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .map-scan::before,
   .live-edge::before,
   body::before {
     animation: none;
@@ -541,10 +513,1273 @@ body::before {
 
 /* Phones: keep the effects, drop the work. */
 @media (max-width: 640px) {
-  .map-scan::before {
-    animation-duration: 22s;
-  }
   .hud-frame::after {
     opacity: 0.35;
+  }
+}
+
+/* ------------------------------------------------------------------------------------------
+ * Forged-metal HUD: holographic glass edges, a projected floor, scanlines, foil sheen and
+ * panels that slide in on a 3D stage. Static or transform/opacity animation only.
+ * ---------------------------------------------------------------------------------------- */
+
+/* Holographic rim: a thin prismatic edge cut out of the panel with a mask. */
+.panel:not(.live-edge)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  pointer-events: none;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from 210deg at 50% 50%,
+    var(--holo-a),
+    var(--holo-c) 20%,
+    oklch(0.64 0.22 27 / 0.9) 36%,
+    var(--holo-a) 50%,
+    var(--holo-c) 72%,
+    var(--holo-a)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+  opacity: 0.38;
+  transition: opacity 400ms;
+}
+
+.panel:not(.live-edge):hover::before {
+  opacity: 0.8;
+}
+
+/* Gold and crimson trim on the map frame, beside the corner brackets. */
+.hud-frame::after {
+  background:
+    linear-gradient(var(--stark-red), var(--stark-red)) top center / 34px 2px no-repeat,
+    linear-gradient(var(--stark-gold), var(--stark-gold)) bottom center / 56px 2px no-repeat,
+    linear-gradient(var(--tick), var(--tick)) top left / 14px 1.5px no-repeat,
+    linear-gradient(var(--tick), var(--tick)) top left / 1.5px 14px no-repeat,
+    linear-gradient(var(--tick), var(--tick)) top right / 14px 1.5px no-repeat,
+    linear-gradient(var(--tick), var(--tick)) top right / 1.5px 14px no-repeat,
+    linear-gradient(var(--tick), var(--tick)) bottom left / 14px 1.5px no-repeat,
+    linear-gradient(var(--tick), var(--tick)) bottom left / 1.5px 14px no-repeat,
+    linear-gradient(var(--tick), var(--tick)) bottom right / 14px 1.5px no-repeat,
+    linear-gradient(var(--tick), var(--tick)) bottom right / 1.5px 14px no-repeat;
+  opacity: 0.8;
+}
+
+/* A projected floor: a perspective grid that fades into the dark at the bottom of the page. */
+html::before {
+  content: "";
+  position: fixed;
+  left: -20%;
+  right: -20%;
+  bottom: -6vh;
+  height: 46vh;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(oklch(1 0 0 / 0.22) 1px, transparent 1px) 0 0 / 100% 46px,
+    linear-gradient(90deg, oklch(1 0 0 / 0.22) 1px, transparent 1px) 0 0 / 64px 100%;
+  transform: perspective(520px) rotateX(64deg);
+  transform-origin: 50% 100%;
+  -webkit-mask-image: linear-gradient(0deg, #000 10%, transparent 85%);
+  mask-image: linear-gradient(0deg, #000 10%, transparent 85%);
+  opacity: 0.22;
+}
+
+/* Scanlines and a slow bright band, laid over everything but never in the way of a click. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, transparent 0, oklch(1 0 0 / 0.05) 50%, transparent 100%) 0 0 / 100%
+      18vh no-repeat,
+    repeating-linear-gradient(0deg, oklch(0 0 0 / 0.14) 0 1px, transparent 1px 3px);
+  mix-blend-mode: soft-light;
+  animation: hologram-band 9s linear infinite;
+}
+
+@keyframes hologram-band {
+  from {
+    background-position:
+      0 -20vh,
+      0 0;
+  }
+  to {
+    background-position:
+      0 120vh,
+      0 0;
+  }
+}
+
+/* The stage: the three columns slide in from depth, each turned toward the middle. */
+.stage {
+  perspective: 1700px;
+  perspective-origin: 50% 40%;
+}
+
+.slide-left,
+.slide-right,
+.rise-centre {
+  animation-duration: 1s;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  animation-fill-mode: backwards;
+}
+
+.slide-left {
+  animation-name: slide-from-left;
+  transform-origin: 100% 50%;
+}
+
+.slide-right {
+  animation-name: slide-from-right;
+  transform-origin: 0% 50%;
+  animation-delay: 0.14s;
+}
+
+.rise-centre {
+  animation-name: rise-in;
+  transform-origin: 50% 100%;
+  animation-delay: 0.07s;
+}
+
+@keyframes slide-from-left {
+  from {
+    opacity: 0;
+    transform: translate3d(-70px, 0, -180px) rotateY(24deg);
+  }
+}
+
+@keyframes slide-from-right {
+  from {
+    opacity: 0;
+    transform: translate3d(70px, 0, -180px) rotateY(-24deg);
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 46px, -140px) rotateX(10deg);
+  }
+}
+
+/* Switching between Explore and Directions slides the new view in like a card. */
+.view-swap {
+  animation: view-swap 0.55s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  transform-origin: 0% 50%;
+}
+
+@keyframes view-swap {
+  from {
+    opacity: 0;
+    transform: perspective(900px) translate3d(40px, 0, -60px) rotateY(-14deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::after,
+  .slide-left,
+  .slide-right,
+  .rise-centre,
+  .view-swap {
+    animation: none;
+  }
+}
+
+@media (max-width: 640px) {
+  html::before,
+  body::after {
+    display: none;
+  }
+}
+
+/* Foil tilt on glass tiles: leans toward the pointer, with a light that follows it. */
+.glass-inset[data-foil] {
+  transform: perspective(620px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateZ(4px);
+  background-image:
+    radial-gradient(
+      circle 90px at var(--mx, 50%) var(--my, 50%),
+      oklch(1 0 0 / 0.16),
+      transparent 70%
+    ),
+    linear-gradient(160deg, oklch(1 0 0 / 0.09), transparent 55%);
+  transition:
+    transform 120ms ease-out,
+    background-image 120ms;
+}
+
+::selection {
+  background: oklch(0.62 0.2 27 / 0.55);
+  color: oklch(0.98 0.01 85);
+}
+
+/* Jarvis-style type: tall condensed headings, a wide brand face, plex readouts. */
+h2,
+h3 {
+  font-weight: 600;
+  letter-spacing: 0.015em;
+  font-size-adjust: 0.56;
+}
+
+.font-brand {
+  font-family: var(--font-brand);
+  font-weight: 400;
+}
+
+/* The brand ring turns while the system is live. */
+.ring-outer {
+  transform-origin: 32px 32px;
+  animation: ring-spin 14s linear infinite;
+}
+
+.ring-inner {
+  transform-origin: 32px 32px;
+  animation: ring-spin 9s linear infinite reverse;
+}
+
+@keyframes ring-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ring-outer,
+  .ring-inner {
+    animation: none;
+  }
+}
+
+/* ------------------------------------------------------------------------------------------------
+   The deck: the map is the table, the controls float over it.
+   --deck-l / --deck-r are how much of each side the columns cover; the map frames itself inside.
+------------------------------------------------------------------------------------------------ */
+.deck {
+  --deck-l: 0px;
+  --deck-r: 0px;
+}
+
+@media (min-width: 1024px) {
+  .deck {
+    --col-l: 300px;
+    --col-r: 340px;
+    --deck-l: 324px;
+    --deck-r: 364px;
+  }
+
+  .deck-col {
+    position: absolute;
+    top: 68px;
+    bottom: 12px;
+    z-index: 20;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 4px 4px 28px;
+    scrollbar-width: none;
+  }
+
+  .deck-col::-webkit-scrollbar {
+    display: none;
+  }
+
+  .deck-left {
+    left: 12px;
+    width: var(--col-l);
+  }
+
+  .deck-right {
+    right: 12px;
+    width: var(--col-r);
+  }
+
+  .deck-col .panel,
+  .deck-col .glass-inset {
+    background-color: oklch(0.085 0.004 260 / 0.68);
+  }
+}
+
+@media (min-width: 1280px) {
+  .deck {
+    --col-l: 336px;
+    --col-r: 392px;
+    --deck-l: 360px;
+    --deck-r: 416px;
+  }
+}
+
+@media (min-width: 1536px) {
+  .deck {
+    --col-l: 360px;
+    --col-r: 430px;
+    --deck-l: 384px;
+    --deck-r: 454px;
+  }
+}
+
+/* The top bar: no box, a fade from black and one hairline with a red mark at its centre. */
+.hud-bar {
+  background: linear-gradient(180deg, oklch(0.05 0.004 260 / 0.95), oklch(0.05 0.004 260 / 0));
+}
+
+.hud-bar::after {
+  content: "";
+  position: absolute;
+  inset-inline: 12px;
+  bottom: 0;
+  height: 1px;
+  background:
+    linear-gradient(
+      90deg,
+      transparent calc(50% - 28px),
+      var(--stark-red) calc(50% - 28px) calc(50% + 28px),
+      transparent calc(50% + 28px)
+    ),
+    linear-gradient(
+      90deg,
+      transparent,
+      oklch(1 0 0 / 0.22) 20%,
+      oklch(1 0 0 / 0.22) 80%,
+      transparent
+    );
+}
+
+/* A scan line crosses the table each time fresh readings land. */
+.map-scan {
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.map-scan::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: -26%;
+  height: 26%;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    oklch(0.95 0.004 260 / 0.05) 70%,
+    oklch(0.95 0.004 260 / 0.22) 98%,
+    oklch(0.6 0.22 25 / 0.8) 99.4%,
+    transparent
+  );
+  animation: map-scan 1.8s cubic-bezier(0.45, 0, 0.2, 1) both;
+}
+
+@keyframes map-scan {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  to {
+    transform: translateY(490%);
+    opacity: 0;
+  }
+}
+
+/* Lock-on reticle on the selected junction. */
+.lock-on {
+  --lock: var(--signal-low);
+  pointer-events: none;
+  overflow: visible;
+}
+
+.lock-on.lock-moderate {
+  --lock: var(--signal-moderate);
+}
+
+.lock-on.lock-high {
+  --lock: var(--signal-high);
+}
+
+.lock-on svg {
+  overflow: visible;
+  stroke: var(--lock);
+  filter: drop-shadow(0 0 4px var(--lock));
+}
+
+.lock-brackets {
+  stroke-width: 1.8;
+  transform-origin: 0 0;
+  animation: lock-close 520ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
+}
+
+.lock-ring circle {
+  stroke-width: 1;
+  opacity: 0.7;
+}
+
+.lock-ring {
+  transform-origin: 0 0;
+  animation: ring-spin 14s linear infinite;
+}
+
+.lock-ticks {
+  stroke: oklch(1 0 0 / 0.7);
+  stroke-width: 1.2;
+}
+
+.lock-tag {
+  position: absolute;
+  left: 70px;
+  top: -6px;
+  display: grid;
+  gap: 2px;
+  padding: 5px 10px 6px 12px;
+  white-space: nowrap;
+  background: oklch(0.07 0.004 260 / 0.82);
+  border-left: 2px solid var(--lock);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: oklch(0.8 0.004 260);
+  clip-path: inset(0 100% 0 0);
+  animation: lock-tag 420ms 260ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+.lock-tag::before {
+  content: "";
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  width: 26px;
+  height: 1px;
+  background: var(--lock);
+}
+
+.lock-tag b {
+  font-family: var(--font-brand);
+  font-weight: 400;
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: oklch(0.97 0.004 260);
+}
+
+@keyframes lock-close {
+  from {
+    transform: scale(2.1) rotate(45deg);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+@keyframes lock-tag {
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+/* The compass's outer orbit turns slowly; its red mark is the bearing it is reading. */
+.compass-orbit {
+  transform-origin: 110px 110px;
+  animation: ring-spin 40s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-scan::before,
+  .lock-brackets,
+  .lock-ring,
+  .compass-orbit {
+    animation: none;
+  }
+
+  .lock-tag {
+    animation: none;
+    clip-path: none;
+  }
+}
+
+/* On the deck, figures read as instrument readouts: a hairline and a faint wash, no box. */
+.deck .glass-inset {
+  border: 0;
+  border-left: 1px solid oklch(1 0 0 / 0.22);
+  border-radius: 0;
+  background: linear-gradient(90deg, oklch(1 0 0 / 0.055), transparent 75%);
+  box-shadow: none;
+}
+
+.deck-col .panel {
+  border-radius: 6px;
+}
+
+@media (min-width: 1024px) {
+  /* Each column is one sheet of smoked glass over the table, so readouts stay legible on any map. */
+  .deck-col {
+    background: linear-gradient(180deg, oklch(0.07 0.004 260 / 0.72), oklch(0.07 0.004 260 / 0.5));
+    -webkit-backdrop-filter: blur(16px) saturate(1.2);
+    backdrop-filter: blur(16px) saturate(1.2);
+    border: 1px solid oklch(1 0 0 / 0.09);
+    border-radius: 8px;
+    padding: 10px 10px 28px;
+  }
+
+  .deck-col .panel {
+    background-color: oklch(1 0 0 / 0.025);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: none;
+  }
+}
+
+/* ================================================================================================
+   ARGUS. An armoured eye over the city. Black, titanium, one red; signal colours only for status.
+================================================================================================ */
+.argus {
+  --ti: oklch(0.93 0.004 260);
+  --steel: oklch(0.64 0.008 260);
+  --hair: oklch(1 0 0 / 0.1);
+  --ink: oklch(0.06 0.003 260);
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --out: cubic-bezier(0.16, 1, 0.3, 1);
+  background: var(--ink);
+}
+
+/* ---- header ---- */
+.argus-bar {
+  background: linear-gradient(180deg, oklch(0.04 0.003 260 / 0.96), oklch(0.04 0.003 260 / 0));
+}
+.argus-bar::after {
+  content: "";
+  position: absolute;
+  inset-inline: 12px;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--hair) 20%,
+    var(--stark-red) calc(50% - 24px) calc(50% + 24px),
+    var(--hair) 80%,
+    transparent
+  );
+}
+.argus-word {
+  font-family: var(--font-brand);
+  font-size: 1.15rem;
+  letter-spacing: 0.42em;
+  color: var(--ti);
+}
+.tech-text span {
+  display: inline-block;
+  transition:
+    color 0.18s,
+    -webkit-text-stroke-color 0.18s;
+}
+.tech-wire {
+  color: transparent;
+  -webkit-text-stroke: 1px var(--stark-red);
+}
+.argus-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  height: 28px;
+  padding: 0 0.7rem;
+  border: 1px solid var(--hair);
+  background: oklch(0.1 0.003 260 / 0.7);
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--steel);
+  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+  transition:
+    color 0.2s,
+    border-color 0.2s,
+    background 0.2s;
+}
+.argus-key b {
+  color: var(--ti);
+  font-weight: 500;
+}
+button.argus-key:hover {
+  color: var(--ti);
+  border-color: oklch(1 0 0 / 0.28);
+}
+button.argus-key:active {
+  transform: translateY(1px);
+}
+.argus-key-hot {
+  color: var(--ti);
+  border-color: color-mix(in oklch, var(--stark-red) 70%, transparent);
+  background: color-mix(in oklch, var(--stark-red) 18%, oklch(0.08 0 0));
+}
+.argus-key-hot:hover {
+  background: color-mix(in oklch, var(--stark-red) 32%, oklch(0.08 0 0));
+}
+.argus-key:focus-visible,
+.branch-item:focus-visible,
+.file-tab:focus-visible,
+.folder-head:focus-visible,
+.helix-plate:focus-visible,
+.cmd-line:focus-visible,
+.eye-button:focus-visible {
+  outline: 1px solid var(--stark-red);
+  outline-offset: 2px;
+}
+
+/* ---- split flap ---- */
+.flap-board {
+  display: inline-flex;
+  gap: 2px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--ti);
+}
+.flap-cell {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 0.92em;
+  height: 1.3em;
+  overflow: hidden;
+  background: linear-gradient(180deg, oklch(0.16 0.003 260) 50%, oklch(0.12 0.003 260) 50%);
+  border-radius: 2px;
+  perspective: 120px;
+}
+.flap-cell::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 50%;
+  height: 1px;
+  background: oklch(0 0 0 / 0.7);
+}
+.flap-char {
+  display: block;
+  transform-origin: 50% 50%;
+  animation: flap 0.16s var(--out, ease-out) both;
+}
+@keyframes flap {
+  from {
+    transform: rotateX(-88deg);
+    opacity: 0.3;
+  }
+}
+.flap-sm {
+  font-size: 0.7rem;
+}
+.flap-sm .flap-cell {
+  width: 0.86em;
+  height: 1.45em;
+}
+.flap-lg {
+  font-size: 0.78rem;
+  flex-wrap: wrap;
+}
+
+/* ---- rail heads, readings, loop ---- */
+.rail-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--steel);
+}
+.rail-head::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border: 1px solid var(--stark-red);
+  transform: rotate(45deg);
+}
+.rail-head::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--hair), transparent);
+}
+.core-row {
+  display: grid;
+  grid-template-columns: 5.2rem auto 1fr;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 3px 0;
+}
+.core-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--steel);
+}
+.core-leader {
+  position: relative;
+  height: 2px;
+  background: repeating-linear-gradient(90deg, var(--hair) 0 2px, transparent 2px 5px);
+}
+.core-leader > span {
+  position: absolute;
+  inset: 0;
+  transform-origin: left;
+  background: var(--ti);
+  transition: transform 0.9s var(--out);
+}
+.core-row[data-hot] .core-leader > span {
+  background: var(--stark-red);
+  box-shadow: 0 0 8px var(--stark-red);
+}
+.core-row[data-hot] .core-label {
+  color: var(--ti);
+}
+
+.loop-steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  position: relative;
+}
+.loop-steps::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  inset-inline: 6px;
+  height: 1px;
+  background: var(--hair);
+}
+.loop-steps li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.loop-node {
+  width: 11px;
+  height: 11px;
+  border: 1px solid var(--steel);
+  background: var(--ink);
+  transform: rotate(45deg);
+  transition:
+    background 0.3s,
+    border-color 0.3s,
+    box-shadow 0.3s;
+}
+.loop-steps li[data-done] .loop-node {
+  background: var(--steel);
+}
+.loop-steps li[data-on] .loop-node {
+  background: var(--stark-red);
+  border-color: var(--stark-red);
+  box-shadow: 0 0 10px var(--stark-red);
+  animation: loop-beat 1s ease-in-out infinite alternate;
+}
+@keyframes loop-beat {
+  to {
+    box-shadow: 0 0 2px var(--stark-red);
+  }
+}
+.loop-label {
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--steel);
+}
+.loop-steps li[data-on] .loop-label {
+  color: var(--ti);
+}
+.loop-note {
+  font-size: 0.62rem;
+  color: oklch(0.55 0.006 260);
+}
+
+/* ---- branched menu ---- */
+.branch-trunk {
+  stroke: var(--hair);
+  stroke-width: 1;
+}
+.branch-twig {
+  stroke: var(--hair);
+  stroke-width: 1;
+  fill: none;
+}
+.branch-twig-on {
+  stroke: var(--steel);
+}
+.branch-trace {
+  fill: none;
+  stroke: var(--stark-red);
+  stroke-width: 1.5;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  filter: drop-shadow(0 0 3px var(--stark-red));
+  animation: trace 0.5s var(--out) forwards;
+}
+@keyframes trace {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.branch-item {
+  font-size: 0.78rem;
+  color: var(--steel);
+  border: 1px solid transparent;
+  transition:
+    color 0.2s,
+    background 0.2s,
+    border-color 0.2s,
+    transform 0.25s var(--out);
+}
+.branch-item:hover {
+  color: var(--ti);
+  transform: translateX(3px);
+}
+.branch-item[aria-selected="true"] {
+  color: var(--ti);
+  border-color: var(--hair);
+  background: linear-gradient(90deg, oklch(1 0 0 / 0.07), transparent);
+}
+.branch-reading {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  color: var(--steel);
+}
+.branch-item[data-hot] .branch-reading {
+  color: var(--stark-red);
+}
+
+/* ---- folder float (junction files) ---- */
+.dossier {
+  position: relative;
+  border: 1px solid var(--hair);
+  background: oklch(0.085 0.004 260 / 0.72);
+  backdrop-filter: blur(14px);
+}
+.folder-head {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.7rem 0.8rem;
+  text-align: left;
+}
+.folder-glyph {
+  width: 34px;
+  height: 24px;
+  flex: none;
+}
+.folder-back {
+  fill: oklch(0.2 0.003 260);
+  stroke: var(--steel);
+  stroke-width: 1;
+}
+.folder-front {
+  fill: oklch(0.13 0.003 260);
+  stroke: var(--steel);
+  stroke-width: 1;
+  transform-origin: 50% 100%;
+  transition: transform 0.4s var(--spring);
+}
+.folder-front.open {
+  transform: skewX(-14deg) scaleY(0.72);
+  stroke: var(--stark-red);
+}
+.folder-title {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ti);
+}
+.folder-count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  color: var(--steel);
+}
+.file-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 0.8rem 0.7rem;
+}
+.file-tab {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 84px;
+  padding: 6px 9px 7px;
+  border: 1px solid var(--hair);
+  background: oklch(0.11 0.003 260);
+  clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 9px, 100% 100%, 0 100%);
+  opacity: 0;
+  transform: translateY(-14px) rotate(calc((var(--i) - var(--n) / 2) * 3deg)) scale(0.9);
+  transition:
+    transform 0.5s var(--spring) calc(var(--i) * 40ms),
+    opacity 0.3s calc(var(--i) * 40ms),
+    border-color 0.2s,
+    background 0.2s;
+}
+.file-cloud.fanned .file-tab {
+  opacity: 1;
+  transform: none;
+}
+.file-tab:hover {
+  border-color: oklch(1 0 0 / 0.3);
+  transform: translateY(-2px);
+}
+.file-tab[aria-selected="true"] {
+  border-color: var(--stark-red);
+  background: color-mix(in oklch, var(--stark-red) 12%, oklch(0.1 0 0));
+}
+.file-name {
+  font-size: 0.74rem;
+  color: var(--ti);
+}
+.file-tag {
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  color: var(--steel);
+}
+.file-sheet {
+  border-top: 1px solid var(--hair);
+  animation: sheet-in 0.45s var(--out) both;
+}
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+/* ---- day helix ---- */
+.helix-stage {
+  position: relative;
+  height: 300px;
+  perspective: 700px;
+  transform-style: preserve-3d;
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+  border: 1px solid var(--hair);
+  background: radial-gradient(ellipse at 50% 50%, oklch(0.14 0.004 260 / 0.8), transparent 70%);
+  mask-image: linear-gradient(180deg, transparent, #000 18%, #000 82%, transparent);
+}
+.helix-stage:active {
+  cursor: grabbing;
+}
+.helix-axis {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, var(--stark-red), transparent);
+  opacity: 0.6;
+}
+.helix-plate {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: grid;
+  grid-template-columns: 1.6rem 1fr 1.4rem;
+  align-items: center;
+  gap: 6px;
+  width: 168px;
+  height: 24px;
+  padding: 0 7px;
+  border: 1px solid var(--hair);
+  background: oklch(0.1 0.003 260 / 0.88);
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  color: var(--steel);
+  transition: border-color 0.2s;
+}
+.helix-plate:hover {
+  border-color: oklch(1 0 0 / 0.35);
+  color: var(--ti);
+}
+.helix-plate[data-picked] {
+  border-color: var(--ti);
+  color: var(--ti);
+}
+.helix-bar {
+  height: 3px;
+  background: linear-gradient(90deg, currentColor calc(var(--load) * 100%), var(--hair) 0);
+}
+.helix-plate[data-level="low"] .helix-bar {
+  color: var(--signal-low);
+}
+.helix-plate[data-level="moderate"] .helix-bar {
+  color: var(--signal-moderate);
+}
+.helix-plate[data-level="high"] {
+  border-color: color-mix(in oklch, var(--stark-red) 60%, transparent);
+}
+.helix-plate[data-level="high"] .helix-bar,
+.helix-plate[data-level="high"] .helix-count {
+  color: var(--stark-red);
+}
+.helix-count {
+  text-align: right;
+}
+
+/* ---- boot ---- */
+.boot {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: grid;
+  place-items: center;
+  background: #030304;
+  transition:
+    opacity 0.6s var(--out),
+    clip-path 0.7s var(--out);
+  clip-path: circle(150% at 50% 22%);
+}
+.boot-leave {
+  opacity: 0;
+  clip-path: circle(0% at 50% 22%);
+  pointer-events: none;
+}
+.boot-glitch {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.55;
+}
+.boot-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 20%, #030304 75%);
+}
+.boot-board {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 24px 28px;
+  border: 1px solid var(--hair);
+  background: oklch(0.05 0.003 260 / 0.8);
+}
+.boot-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.85rem;
+}
+.boot-ok {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  color: var(--stark-red);
+  letter-spacing: 0.2em;
+}
+.boot-skip {
+  position: absolute;
+  bottom: 28px;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--steel);
+}
+
+/* ---- eye dock + tether ---- */
+.eye-dock {
+  top: 14px;
+  gap: 6px;
+}
+@media (min-width: 1024px) {
+  .eye-dock {
+    top: 60px;
+  }
+}
+.eye-button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+}
+.eye-socket {
+  position: absolute;
+  inset: -12px;
+  border-radius: 50%;
+  border: 1px solid var(--hair);
+  background:
+    conic-gradient(from 0deg, transparent 0 8deg, var(--steel) 8deg 9deg, transparent 9deg 30deg)
+      center / 100% 100%,
+    radial-gradient(circle, oklch(0.05 0 0 / 0.9) 55%, transparent 72%);
+  mask: radial-gradient(circle, transparent 60%, #000 61%);
+  animation: socket-turn 40s linear infinite;
+  opacity: 0.7;
+}
+.eye-socket::after {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  border: 1px dashed oklch(1 0 0 / 0.14);
+}
+@keyframes socket-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.eye-readout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  border: 1px solid var(--hair);
+  background: oklch(0.06 0.003 260 / 0.55);
+  backdrop-filter: blur(10px);
+}
+.eye-watching {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--steel);
+}
+.tether-line {
+  stroke-dasharray: 3 5;
+  animation: tether-run 0.9s linear infinite;
+}
+@keyframes tether-run {
+  to {
+    stroke-dashoffset: -16;
+  }
+}
+
+/* ---- command line + liquid glass ---- */
+.liquid {
+  background: oklch(0.1 0.003 260 / 0.42);
+  backdrop-filter: blur(8px) saturate(1.2);
+}
+@supports (backdrop-filter: url(#liquid-glass)) {
+  .liquid {
+    backdrop-filter: url(#liquid-glass) blur(4px);
+  }
+}
+.cmd-line {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--hair);
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.12),
+    inset 0 -1px 0 oklch(0 0 0 / 0.4),
+    0 10px 30px oklch(0 0 0 / 0.45);
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  text-align: left;
+  color: var(--steel);
+  transition: border-color 0.2s;
+}
+.cmd-line:hover {
+  border-color: oklch(1 0 0 / 0.26);
+}
+.cmd-prompt {
+  white-space: nowrap;
+  color: var(--stark-red);
+}
+.cmd-prompt b {
+  font-weight: 500;
+  color: var(--ti);
+}
+.cmd-hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cmd-caret {
+  width: 7px;
+  height: 14px;
+  flex: none;
+  background: var(--ti);
+  animation: caret 1.05s steps(1) infinite;
+}
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
+}
+.cmd-kbd {
+  margin-left: auto;
+  padding: 1px 6px;
+  border: 1px solid var(--hair);
+  font-size: 0.6rem;
+  white-space: nowrap;
+}
+
+/* ---- glow border that follows the pointer (set by useGlowBorders) ---- */
+.hx,
+.deck-col .panel {
+  --gx: 50%;
+  --gy: 50%;
+  --ga: 0;
+}
+.hx::after,
+.deck-col .panel::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  padding: 1px;
+  pointer-events: none;
+  border-radius: inherit;
+  background: radial-gradient(
+    180px circle at var(--gx) var(--gy),
+    var(--stark-red),
+    oklch(1 0 0 / 0.4) 30%,
+    transparent 60%
+  );
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: var(--ga);
+}
+.deck-col .panel {
+  position: relative;
+}
+
+.argus .branch-panel:empty {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flap-char,
+  .branch-trace,
+  .file-sheet,
+  .eye-socket,
+  .tether-line,
+  .cmd-caret,
+  .loop-steps li[data-on] .loop-node {
+    animation: none;
+  }
+  .branch-trace {
+    stroke-dashoffset: 0;
+  }
+  .file-tab,
+  .folder-front,
+  .boot {
+    transition: none;
   }
 }
