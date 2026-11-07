@@ -4,6 +4,7 @@ import { lazy, Suspense, useMemo, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 
 import { ElectricBorder, HoldButton, ScrubField } from "@/components/fx/controls";
+import { CameraFeed } from "@/components/fx/CameraFeed";
 import { toast } from "@/components/fx/global";
 import { Decrypt, GlitchText, RollNumber, TypeLine } from "@/components/fx/text";
 import {
@@ -238,6 +239,9 @@ function JunctionPage() {
         </div>
 
         <div className="space-y-3">
+          <HudFrame label="Camera" code={`CAM-${String(junctionId).padStart(3, "0")}`}>
+            <CameraFeed junctionId={junctionId} roads={roadList} />
+          </HudFrame>
           <HudFrame label="Approach queues" code="MODELLED">
             {model.isLoading ? (
               <Lattice label="Loading model" />
