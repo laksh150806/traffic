@@ -4,7 +4,7 @@ import { lazy, Suspense, useMemo, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 
 import { ElectricBorder, HoldButton, ScrubField } from "@/components/fx/controls";
-import { CameraFeed } from "@/components/fx/CameraFeed";
+import { AdaptiveDeck } from "@/components/ops/AdaptiveDeck";
 import { toast } from "@/components/fx/global";
 import { Decrypt, GlitchText, RollNumber, TypeLine } from "@/components/fx/text";
 import {
@@ -21,7 +21,7 @@ import { IncidentForm } from "@/components/shell/IncidentForm";
 import { canOperate, useAuth, useNow } from "@/lib/auth";
 import { DATA_MODE } from "@/lib/data-mode";
 import { fetchActiveHolds, holdSignal, releaseHold } from "@/lib/ops-data";
-import { clearOperatorOverride, setOperatorOverride } from "@/lib/sim-engine";
+import { clearOperatorOverride, getOperatorOverrides, setOperatorOverride } from "@/lib/sim-engine";
 import {
   fetchCycleComparison,
   fetchJunctionModel,
@@ -136,16 +136,15 @@ function JunctionPage() {
   }, [model.data]);
   const userId = auth.status === "signed-in" ? auth.operator.userId : null;
 
-  const doHold = async () => {
-    if (target === null) return;
+  const runHold = async (roadId: number, minutes: number, why: string) => {
     try {
-      if (isSimulated) setOperatorOverride(junctionId, target, holdMin * 60);
+      if (isSimulated) setOperatorOverride(junctionId, roadId, minutes * 60);
       else {
         if (!userId) throw new Error("Sign in as an operator first");
-        await holdSignal({ junctionId, roadId: target, minutes: holdMin, reason, userId });
+        await holdSignal({ junctionId, roadId, minutes, reason: why, userId });
       }
       toast(
-        `Green held on ${roadList.find((r) => r.road_id === target)?.direction ?? "approach"} for ${holdMin} min.`,
+        `Green held on ${roadList.find((r) => r.road_id === roadId)?.direction ?? "approach"} for ${minutes} min.`,
         "ok",
       );
       void queryClient.invalidateQueries();
@@ -153,6 +152,7 @@ function JunctionPage() {
       toast(error instanceof Error ? error.message : "Hold refused", "bad");
     }
   };
+  const doHold = () => (target === null ? undefined : runHold(target, holdMin, reason));
   const doRelease = async () => {
     try {
       if (isSimulated) clearOperatorOverride(junctionId);
@@ -163,6 +163,15 @@ function JunctionPage() {
       toast(error instanceof Error ? error.message : "Release refused", "bad");
     }
   };
+
+  const simHold = isSimulated
+    ? getOperatorOverrides(now).find((o) => o.junctionId === junctionId)
+    : undefined;
+  const deckHold = simHold
+    ? { roadId: simHold.roadId, untilMs: simHold.untilMs }
+    : hold
+      ? { roadId: hold.road_id, untilMs: Date.parse(hold.ends_at) }
+      : null;
 
   if (junctions.isSuccess && !junction) {
     return (
@@ -206,6 +215,17 @@ function JunctionPage() {
         </div>
       </header>
 
+      <AdaptiveDeck
+        junctionId={junctionId}
+        roads={roadList}
+        model={model.data ?? []}
+        now={now}
+        hold={deckHold}
+        canOperate={allowed}
+        onGive={(roadId) => void runHold(roadId, 2, "Quick hold from the adaptive deck")}
+        onRelease={() => void doRelease()}
+      />
+
       <div className="ops-grid lg:grid-cols-[300px_1fr_340px]">
         <div className="space-y-3">
           <HudFrame label="Phase ring" code="CYCLE">
@@ -239,9 +259,6 @@ function JunctionPage() {
         </div>
 
         <div className="space-y-3">
-          <HudFrame label="Camera" code={`CAM-${String(junctionId).padStart(3, "0")}`}>
-            <CameraFeed junctionId={junctionId} roads={roadList} />
-          </HudFrame>
           <HudFrame label="Approach queues" code="MODELLED">
             {model.isLoading ? (
               <Lattice label="Loading model" />

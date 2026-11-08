@@ -829,3 +829,58 @@
 .cam-time{bottom:8px;left:8px}
 @keyframes cam-blink{50%{opacity:.15}}
 @media (prefers-reduced-motion:reduce){.cam-rec i{animation:none}}
+
+/* Adaptive deck */
+.deck{display:grid;gap:12px;margin-bottom:12px;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr)}
+@media (max-width:1023px){.deck{grid-template-columns:1fr}}
+.deck-cam{position:relative}
+.deck-cam .cam-view{aspect-ratio:16/10}
+.deck-ctl{display:flex;flex-direction:column;gap:10px;padding:14px;border:1px solid rgba(255,45,120,.28);background:rgba(10,12,14,.72)}
+.deck-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.deck-state{display:flex;align-items:center;gap:8px;margin-top:4px;font:600 13px/1.2 "Chakra Petch",sans-serif;color:#3ddc84}
+.deck-state i{width:8px;height:8px;border-radius:50%;background:currentColor;animation:cam-blink 1.4s steps(2,end) infinite}
+.deck-state.is-held{color:#ff2d78}
+.deck-save{text-align:right}
+.deck-save .ops-value{font-size:30px;line-height:1}
+.deck-plan{display:flex;gap:3px;height:34px}
+.deck-seg{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:space-between;padding:0 8px;min-width:34px;border:1px solid rgba(230,233,236,.14);background:rgba(230,233,236,.04);font:600 11px "JetBrains Mono",monospace;color:#8f979e}
+.deck-seg i{position:absolute;inset:0;transform-origin:left;background:rgba(61,220,132,.28);transition:transform 1s linear}
+.deck-seg span,.deck-seg b{position:relative}
+.deck-seg.is-on{border-color:#3ddc84;color:#e6e9ec}
+.deck-next{font-size:12px;color:#8f979e;line-height:1.45}
+.deck-next strong{color:#e6e9ec;font-weight:600}
+.deck-arms{display:grid;gap:6px;margin:0;padding:0;list-style:none}
+.deck-arms li{padding:8px 10px;border:1px solid rgba(230,233,236,.1);background:rgba(230,233,236,.025);transition:border-color .3s,background .3s}
+.deck-arms li.is-green{border-color:rgba(61,220,132,.55);background:rgba(61,220,132,.06)}
+.deck-arm-head{display:flex;align-items:center;gap:8px}
+.deck-arm-head .ops-label{flex:1}
+.deck-lamp{width:8px;height:8px;border-radius:50%;background:#ff4d3d}
+.is-green .deck-lamp{background:#3ddc84;box-shadow:0 0 8px #3ddc84}
+.deck-give{padding:4px 10px;font-size:11px}
+.deck-why{margin:4px 0 0;font-size:12px;color:#8f979e}
+.deck-delay{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;margin-top:6px}
+.deck-delay>div{position:relative;height:8px;background:rgba(230,233,236,.06)}
+.deck-delay i{position:absolute;left:0;top:0;height:50%;transition:width .8s ease}
+.deck-delay i.fx{background:rgba(143,151,158,.55)}
+.deck-delay i.ad{top:50%;background:#3ddc84}
+.deck-delay s{color:#8f979e;margin-left:4px}
+.deck-foot{margin-top:auto}
+@media (prefers-reduced-motion:reduce){.deck-state i{animation:none}.deck-seg i{transition:none}}
+
+/* Adaptive brief + gain chip */
+.gain-chip{display:flex;align-items:center;gap:7px;margin:0;font:600 11px/1.3 "Chakra Petch",sans-serif;color:#8f979e}
+.gain-chip i{flex:none;width:7px;height:7px;border-radius:50%;background:currentColor}
+.gain-chip.is-better{color:#3ddc84}
+.gain-chip.is-worse{color:#ff2d78}
+.brief{padding:12px;border:1px solid rgba(255,45,120,.28);background:rgba(10,12,14,.6);display:grid;gap:6px}
+.brief-big{margin:0;font:700 30px/1 "Chakra Petch",sans-serif;color:#3ddc84}
+.brief-big span{display:block;margin-top:4px;font:500 11px/1.3 "JetBrains Mono",monospace;color:#8f979e}
+.brief-how{margin:0;font-size:12px;line-height:1.45;color:#8f979e}
+.brief-tally{display:flex;gap:12px;margin:0;padding:0;list-style:none;font-size:11px;color:#8f979e}
+.brief-tally b{color:#e6e9ec;font-size:14px;margin-right:3px}
+.brief-top{display:grid;gap:3px;margin:0;padding:0;list-style:none}
+.brief-top a{display:flex;justify-content:space-between;padding:5px 8px;border:1px solid rgba(230,233,236,.1);font:600 11px "JetBrains Mono",monospace;color:#e6e9ec;text-decoration:none;transition:border-color .2s}
+.brief-top a:hover,.brief-top a:focus-visible{border-color:#3ddc84}
+.brief-top b{color:#3ddc84}
+.brief-go{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.brief-go .ops-btn{text-decoration:none;text-align:center}

@@ -15,6 +15,7 @@ import {
   Spectrum,
   type Blip,
 } from "@/components/fx/decor";
+import { GainChip, useJunctionGains } from "@/components/ops/AdaptiveBrief";
 import { fetchJunctions, type JunctionSummary } from "@/lib/traffic-data";
 
 export const Route = createFileRoute("/junctions/")({
@@ -45,6 +46,12 @@ function blipsOf(junctions: JunctionSummary[]): Blip[] {
 
 function JunctionsPage() {
   const q = useQuery({ queryKey: ["junctions"], queryFn: fetchJunctions, refetchInterval: 6000 });
+  const gainsQ = useJunctionGains();
+  const gains = useMemo(
+    () => new Map((gainsQ.data ?? []).map((g) => [g.junction_id, g])),
+    [gainsQ.data],
+  );
+  const [sortBy, setSortBy] = useState<"load" | "gain">("load");
   const [level, setLevel] = useState<Level | "ALL">("ALL");
   const [zone, setZone] = useState("ALL");
   const [text, setText] = useState("");
@@ -59,8 +66,12 @@ function JunctionsPage() {
             (zone === "ALL" || j.zone === zone),
         )
         .filter((j) => j.name.toLowerCase().includes(text.trim().toLowerCase()))
-        .sort((a, b) => b.avg_vehicle_count - a.avg_vehicle_count),
-    [all, level, zone, text],
+        .sort((a, b) =>
+          sortBy === "gain"
+            ? (gains.get(b.junction_id)?.savedSec ?? 0) - (gains.get(a.junction_id)?.savedSec ?? 0)
+            : b.avg_vehicle_count - a.avg_vehicle_count,
+        ),
+    [all, level, zone, text, sortBy, gains],
   );
   const counts = { HIGH: 0, MODERATE: 0, LOW: 0 } as Record<Level, number>;
   for (const j of all) counts[j.congestion_level]++;
@@ -74,8 +85,9 @@ function JunctionsPage() {
           <p className="ops-kicker">Sector index · {all.length} nodes</p>
           <Decrypt as="h1" className="ops-h1" text="Junction register" />
           <p className="ops-sub mt-2">
-            Every signalised junction the model controls, busiest first. Open one to see its phase
-            ring, queues, and to hold a green by hand.
+            Each card shows what the adaptive controller is doing there: how much waiting it saves
+            against a fixed timer. Open one for its live camera, the green plan, and one-tap manual
+            control.
           </p>
         </div>
         <HexField rows={5} cols={30} className="hidden md:block" />
@@ -97,6 +109,26 @@ function JunctionsPage() {
                   {l === "ALL" ? `All ${all.length}` : `${LEVEL_WORD[l]} ${counts[l]}`}
                 </button>
               ))}
+            </div>
+            <div role="radiogroup" aria-label="Sort junctions" className="ops-seg">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={sortBy === "load"}
+                className={sortBy === "load" ? "is-on" : ""}
+                onClick={() => setSortBy("load")}
+              >
+                Busiest
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={sortBy === "gain"}
+                className={sortBy === "gain" ? "is-on" : ""}
+                onClick={() => setSortBy("gain")}
+              >
+                Adaptive wins
+              </button>
             </div>
             <label className="ops-field w-44">
               <span className="ops-label">Zone</span>
@@ -173,6 +205,7 @@ function JunctionsPage() {
                           style={{ width: `${(j.avg_vehicle_count / maxAvg) * 100}%` }}
                         />
                       </div>
+                      <GainChip gain={gains.get(j.junction_id)} />
                       <Serial code={`${j.latitude.toFixed(3)}N ${j.longitude.toFixed(3)}E`} />
                     </Link>
                   </HoloCard>

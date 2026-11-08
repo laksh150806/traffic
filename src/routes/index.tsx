@@ -25,6 +25,7 @@ import { CameraWall } from "@/components/traffic/CameraWall";
 import { ModelPanel } from "@/components/traffic/ModelPanel";
 import { ScenarioPanel } from "@/components/traffic/ScenarioPanel";
 import { Attention } from "@/components/ops/Attention";
+import { AdaptiveBrief, useJunctionGains } from "@/components/ops/AdaptiveBrief";
 import { useForgeEffects } from "@/components/ops/useForgeEffects";
 import { DirectionsPanel } from "@/components/ops/DirectionsPanel";
 import { CityBoard, type BoardStat } from "@/components/ops/CityBoard";
@@ -599,6 +600,7 @@ function Dashboard() {
   const networkVehicles = junctions.reduce((sum, j) => sum + j.total_vehicle_count, 0);
   const jammed = junctions.filter((j) => j.congestion_level === "HIGH").length;
   const perf = performanceQuery.data;
+  const gainsQuery = useJunctionGains();
   useForgeEffects(junctions.length ? jammed : null);
 
   // Signed: negative means the adaptive plan is predicted to wait longer than the fixed timer.
@@ -1228,6 +1230,11 @@ function Dashboard() {
                 setSelectedId(j.junction_id);
                 setPick(null);
               }}
+            />
+            <AdaptiveBrief
+              gains={gainsQuery.data ?? []}
+              percent={waitChange.percent}
+              selected={selected ? { id: selected.junction_id, name: selected.name } : null}
             />
             <CoreReadings readings={readings} />
             <ControlLoop busy={busy} lastUpdated={lastUpdated} />

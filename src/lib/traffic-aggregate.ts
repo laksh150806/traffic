@@ -116,3 +116,40 @@ export function computeModelPerformance(
     junctionsTotal: perJunction.size,
   };
 }
+
+/** What the adaptive plan changes at one junction, against its fixed-time reference. */
+export type JunctionGain = {
+  junction_id: number;
+  /** Flow-weighted wait saved per vehicle, seconds. Negative means the fixed timer is predicted better. */
+  savedSec: number;
+  fixedSec: number;
+  adaptiveSec: number;
+  percent: number;
+  flowVph: number;
+};
+
+export function computeJunctionGains(states: ModelStateSlice[]): JunctionGain[] {
+  const by = new Map<number, { flow: number; adaptive: number; fixed: number }>();
+  for (const row of states) {
+    if (row.junction_id === null || row.junction_id === undefined) continue;
+    const w = Number(row.arrival_rate_vph ?? 0);
+    const j = by.get(row.junction_id) ?? { flow: 0, adaptive: 0, fixed: 0 };
+    j.flow += w;
+    j.adaptive += Number(row.predicted_delay_adaptive_sec ?? 0) * w;
+    j.fixed += Number(row.predicted_delay_fixed_sec ?? 0) * w;
+    by.set(row.junction_id, j);
+  }
+  return [...by.entries()].map(([junction_id, j]) => {
+    const fixedSec = j.flow > 0 ? j.fixed / j.flow : 0;
+    const adaptiveSec = j.flow > 0 ? j.adaptive / j.flow : 0;
+    const savedSec = fixedSec - adaptiveSec;
+    return {
+      junction_id,
+      savedSec: Number(savedSec.toFixed(1)),
+      fixedSec: Number(fixedSec.toFixed(1)),
+      adaptiveSec: Number(adaptiveSec.toFixed(1)),
+      percent: fixedSec > 0 ? Math.round((savedSec / fixedSec) * 100) : 0,
+      flowVph: Math.round(j.flow),
+    };
+  });
+}

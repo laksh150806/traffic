@@ -496,7 +496,7 @@ function drawFeed(
     ctx.stroke();
   }
 
-  const wide = w > 420;
+  const wide = w > 520;
   const fs = Math.max(8, Math.min(11, w / 46));
   ctx.font = `600 ${fs}px "JetBrains Mono", monospace`;
   ctx.textBaseline = "alphabetic";

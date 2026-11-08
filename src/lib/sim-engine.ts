@@ -37,6 +37,7 @@ import {
 import {
   aggregateCycleRows,
   computeModelPerformance,
+  computeJunctionGains,
   directionRank,
   type CycleRow,
 } from "@/lib/traffic-aggregate";
@@ -1100,6 +1101,16 @@ export function simFetchModelPerformance(): ModelPerformance {
     return model ? [{ ...model, junction_id: r.junctionId }] : [];
   });
   return computeModelPerformance(w.accuracy, states, w.baseline);
+}
+
+export function simFetchJunctionGains() {
+  const w = ensureWorld();
+  return computeJunctionGains(
+    w.roads.flatMap((r) => {
+      const model = w.sim.get(r.roadId)?.model;
+      return model ? [{ ...model, junction_id: r.junctionId }] : [];
+    }),
+  );
 }
 
 /** Modelled waiting avoided over the last hour (or since the engine started, if shorter). */

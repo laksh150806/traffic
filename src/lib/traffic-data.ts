@@ -3,6 +3,8 @@ import * as engine from "@/lib/sim-engine";
 import {
   aggregateCycleRows,
   computeModelPerformance,
+  computeJunctionGains,
+  type JunctionGain,
   directionRank,
   type CycleRow,
   type ModelStateSlice,
@@ -194,6 +196,20 @@ export async function fetchModelPerformance(): Promise<ModelPerformance> {
     .filter((r) => r.baseline_queue !== null)
     .map((r) => Math.abs(Number(r.baseline_queue) - Number(r.actual_queue)));
   return computeModelPerformance(errors, (state ?? []) as ModelStateSlice[], baseline);
+}
+
+export type { JunctionGain };
+
+/** Per-junction adaptive-versus-fixed wait, for every junction at once. */
+export async function fetchJunctionGains(): Promise<JunctionGain[]> {
+  if (isSimulated) return engine.simFetchJunctionGains();
+  const supabase = await database();
+  const { data } = await supabase
+    .from("model_road_state")
+    .select(
+      "junction_id, arrival_rate_vph, degree_saturation, predicted_delay_adaptive_sec, predicted_delay_fixed_sec",
+    );
+  return computeJunctionGains((data ?? []) as ModelStateSlice[]);
 }
 
 /** Modelled waiting avoided over the last hour, summed across the network (signed). */
