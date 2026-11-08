@@ -79,7 +79,7 @@ export async function fetchRoadStates(junctionId: number): Promise<RoadState[]> 
   const roadIds = roadRows.map((r) => r.road_id);
   if (roadIds.length === 0) return [];
 
-  const [{ data: timings }, { data: counts }] = await Promise.all([
+  const [{ data: timings, error: timingsError }, { data: counts, error: countsError }] = await Promise.all([
     supabase
       .from("signal_timings")
       .select("road_id, green_duration_sec, timing_mode, is_currently_green, updated_at")
@@ -89,6 +89,8 @@ export async function fetchRoadStates(junctionId: number): Promise<RoadState[]> 
       .select("road_id, vehicle_count, recorded_at")
       .in("road_id", roadIds),
   ]);
+  if (timingsError) throw new Error(`signal_timings: ${timingsError.message}`);
+  if (countsError) throw new Error(`v_latest_vehicle_count: ${countsError.message}`);
 
   const timingByRoad = new Map(
     ((timings ?? []) as Array<Record<string, unknown>>).map((t) => [Number(t["road_id"]), t]),
@@ -139,10 +141,11 @@ export async function fetchCycleComparison(junctionId: number): Promise<CyclePoi
 export async function fetchJunctionModel(junctionId: number): Promise<ApproachModelState[]> {
   if (isSimulated) return engine.simFetchJunctionModel(junctionId);
   const supabase = await database();
-  const [{ data: roads }, { data: state, error }] = await Promise.all([
+  const [{ data: roads, error: roadsError }, { data: state, error }] = await Promise.all([
     supabase.from("roads").select("road_id, direction").eq("junction_id", junctionId),
     supabase.from("model_road_state").select("*").eq("junction_id", junctionId),
   ]);
+  if (roadsError) throw new Error(`roads: ${roadsError.message}`);
   if (error) throw new Error(error.message);
   const dirByRoad = new Map(
     ((roads ?? []) as Array<{ road_id: number; direction: string }>).map((r) => [
@@ -172,7 +175,7 @@ export async function fetchJunctionModel(junctionId: number): Promise<ApproachMo
 export async function fetchModelPerformance(): Promise<ModelPerformance> {
   if (isSimulated) return engine.simFetchModelPerformance();
   const supabase = await database();
-  const [{ data: accuracy }, { data: state }] = await Promise.all([
+  const [{ data: accuracy, error: accuracyError }, { data: state, error: stateError }] = await Promise.all([
     supabase
       .from("model_accuracy")
       .select("abs_error, actual_queue, baseline_queue")
@@ -184,6 +187,8 @@ export async function fetchModelPerformance(): Promise<ModelPerformance> {
         "junction_id, arrival_rate_vph, degree_saturation, predicted_delay_adaptive_sec, predicted_delay_fixed_sec",
       ),
   ]);
+  if (accuracyError) throw new Error(`model_accuracy: ${accuracyError.message}`);
+  if (stateError) throw new Error(`model_road_state: ${stateError.message}`);
 
   const rows = (accuracy ?? []) as Array<{
     abs_error: number;
@@ -204,11 +209,12 @@ export type { JunctionGain };
 export async function fetchJunctionGains(): Promise<JunctionGain[]> {
   if (isSimulated) return engine.simFetchJunctionGains();
   const supabase = await database();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("model_road_state")
     .select(
       "junction_id, arrival_rate_vph, degree_saturation, predicted_delay_adaptive_sec, predicted_delay_fixed_sec",
     );
+  if (error) throw new Error(`model_road_state: ${error.message}`);
   return computeJunctionGains((data ?? []) as ModelStateSlice[]);
 }
 
@@ -230,17 +236,19 @@ export async function fetchTotalSecondsSaved(): Promise<ModelledSaving> {
 export async function fetchCctvFeed(junctionId: number): Promise<CctvPoint[]> {
   if (isSimulated) return engine.simFetchCctvFeed(junctionId);
   const supabase = await database();
-  const { data: roads } = await supabase
+  const { data: roads, error: roadsError } = await supabase
     .from("roads")
     .select("road_id")
     .eq("junction_id", junctionId);
+  if (roadsError) throw new Error(`roads: ${roadsError.message}`);
   const roadIds = ((roads ?? []) as Array<{ road_id: number }>).map((r) => r.road_id);
   if (roadIds.length === 0) return [];
 
-  const { data: cameras } = await supabase
+  const { data: cameras, error: camerasError } = await supabase
     .from("cctv_cameras")
     .select("camera_id, camera_name")
     .in("road_id", roadIds);
+  if (camerasError) throw new Error(`cctv_cameras: ${camerasError.message}`);
   const cameraRows = (cameras ?? []) as Array<{ camera_id: number; camera_name: string | null }>;
   if (cameraRows.length === 0) return [];
   const nameById = new Map(
@@ -276,10 +284,11 @@ export async function fetchCctvFeed(junctionId: number): Promise<CctvPoint[]> {
 export async function fetchCameraTiles(junctionId: number): Promise<CameraTile[]> {
   if (isSimulated) return engine.simFetchCameraTiles(junctionId);
   const supabase = await database();
-  const { data: roads } = await supabase
+  const { data: roads, error: roadsError } = await supabase
     .from("roads")
     .select("road_id, direction, road_name")
     .eq("junction_id", junctionId);
+  if (roadsError) throw new Error(`roads: ${roadsError.message}`);
   const roadRows = (roads ?? []) as Array<{
     road_id: number;
     direction: string;
@@ -288,13 +297,14 @@ export async function fetchCameraTiles(junctionId: number): Promise<CameraTile[]
   if (roadRows.length === 0) return [];
   const roadById = new Map(roadRows.map((r) => [r.road_id, r]));
 
-  const { data: cameras } = await supabase
+  const { data: cameras, error: camerasError } = await supabase
     .from("cctv_cameras")
     .select("camera_id, camera_name, status, road_id")
     .in(
       "road_id",
       roadRows.map((r) => r.road_id),
     );
+  if (camerasError) throw new Error(`cctv_cameras: ${camerasError.message}`);
   const cameraRows = (cameras ?? []) as Array<{
     camera_id: number;
     camera_name: string | null;
@@ -303,7 +313,7 @@ export async function fetchCameraTiles(junctionId: number): Promise<CameraTile[]
   }>;
   if (cameraRows.length === 0) return [];
 
-  const { data: logs } = await supabase
+  const { data: logs, error: logsError } = await supabase
     .from("cctv_analysis_log")
     .select("camera_id, frame_number, confidence_avg, analyzed_at")
     .in(
@@ -312,6 +322,7 @@ export async function fetchCameraTiles(junctionId: number): Promise<CameraTile[]
     )
     .order("analysis_id", { ascending: false })
     .limit(80);
+  if (logsError) throw new Error(`cctv_analysis_log: ${logsError.message}`);
 
   const latestByCamera = new Map<number, Record<string, unknown>>();
   for (const row of (logs ?? []) as Array<Record<string, unknown>>) {
